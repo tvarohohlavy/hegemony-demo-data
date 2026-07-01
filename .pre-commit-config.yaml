@@ -33,7 +33,7 @@ repos:
         name: "Checks: typo scan"
 
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.22.0
+    rev: v1.26.1
     hooks:
       - id: zizmor
         name: "Security: GitHub Actions policy scan (Zizmor)"

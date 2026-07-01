@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Generate SHA256SUMS for releaseable bundle assets."""
+"""Generate SHA256SUMS for releasable bundle assets."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ DIST_DIR = ROOT / "dist"
 def main() -> int:
     files = sorted(DIST_DIR.glob("*.yaml"))
     if not files:
-        raise FileNotFoundError(f"No releaseable YAML bundles found in {DIST_DIR}")
+        raise FileNotFoundError(f"No releasable YAML bundles found in {DIST_DIR}")
 
     for path in files:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()

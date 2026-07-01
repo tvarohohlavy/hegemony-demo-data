@@ -125,32 +125,32 @@ flow_subscriptions:
   - flow: "Demo: parallel site readiness"
     destination: "Demo Webhook: Generic JSON"
     event: run.completed
-    enabled: true
+    enabled: false
   - flow: "Demo: parallel site readiness"
     destination: "Demo Webhook: Microsoft Teams"
     event: run.completed
-    enabled: true
+    enabled: false
   - flow: "Demo: parallel site readiness"
     destination: "Demo Webhook: Signed HMAC"
     event: run.completed
-    enabled: true
+    enabled: false
   - flow: "Demo: parallel site readiness"
     destination: "Demo Shoutrrr: Discord"
     event: run.completed
-    enabled: true
+    enabled: false
   - flow: "Demo: parallel site readiness"
     destination: "Demo Shoutrrr: Slack"
     event: run.completed
-    enabled: true
+    enabled: false
   - flow: "Demo: parallel site readiness"
     destination: "Demo Shoutrrr: Teams"
     event: run.completed
-    enabled: true
+    enabled: false
   - flow: "Demo: parallel site readiness"
     destination: "Demo Shoutrrr: Telegram"
     event: run.completed
-    enabled: true
+    enabled: false
   - flow: "Demo: parallel site readiness"
     destination: "Demo Shoutrrr: Ntfy"
     event: run.completed
-    enabled: true
+    enabled: false

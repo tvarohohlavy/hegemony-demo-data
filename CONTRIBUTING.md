@@ -14,7 +14,8 @@ bootstrap content, not application code or plugin packages.
 1. Edit YAML fragments under `src/bundles/`.
 2. Run `uv run python scripts/build.py`.
 3. Run `uv run python scripts/build.py --check`.
-4. Commit source fragment changes and generated `dist/` changes together.
+4. Run `uv run python scripts/validate.py`.
+5. Commit source fragment changes and generated `dist/` changes together.
 
 The pre-commit hook regenerates the bundle automatically when source fragments
 or the build script change. CI verifies that generated files are current.

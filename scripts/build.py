@@ -124,7 +124,11 @@ def merge_fragments(config: BundleConfig) -> dict[str, Any]:
             if isinstance(value, list):
                 sections.setdefault(key, []).extend(value)
             elif isinstance(value, dict):
-                sections.setdefault(key, {}).update(value)
+                target = sections.setdefault(key, {})
+                overlap = target.keys() & value.keys()
+                if overlap:
+                    raise ValueError(f"{path}: duplicate keys in {key!r}: {sorted(overlap)}")
+                target.update(value)
             elif value is not None:
                 raise ValueError(f"{path}: unsupported top-level value for {key!r}")
 
@@ -147,6 +151,8 @@ def render_bundle(bundle: dict[str, Any], config: BundleConfig) -> str:
     )
     source = config.source_dir.relative_to(ROOT)
     copyright_marker = "SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>"
+    # Split so this literal isn't picked up as a real SPDX header by REUSE/license
+    # scanners parsing this script's own source.
     license_marker = "SPDX-License-" "Identifier: AGPL-3.0-or-later"
     return (
         f"# {copyright_marker}\n"

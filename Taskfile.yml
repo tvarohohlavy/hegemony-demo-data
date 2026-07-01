@@ -29,7 +29,7 @@ tasks:
       - PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate.py
 
   checksums:
-    desc: Generate SHA256SUMS for releaseable YAML bundles
+    desc: Generate SHA256SUMS for releasable YAML bundles
     cmds:
       - PYTHONDONTWRITEBYTECODE=1 uv run python scripts/checksums.py > SHA256SUMS
 

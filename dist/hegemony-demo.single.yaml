@@ -1148,39 +1148,40 @@ flows:
         position_y: 160
         type: start
 - name: 'Demo: staged branch rollout'
-  description: Demonstrates a multi-region rollout fan-out with parallel regional stages and an all-branches join before verification.
+  description: Demonstrates a staged rollout fan-out across device roles with parallel per-role stages and an all-branches
+    join before verification.
   definition:
     graph:
       edges:
       - id: e_start_prepare
         source: start:start
         target: prepare
-      - id: e_prepare_regions
+      - id: e_prepare_stages
         source: prepare:success
-        target: region_fork
-      - id: e_regions_americas
-        source: region_fork:fork
-        target: rollout_americas
-      - id: e_regions_emea
-        source: region_fork:fork
-        target: rollout_emea
-      - id: e_regions_apac
-        source: region_fork:fork
-        target: rollout_apac
-      - id: e_americas_join
-        source: rollout_americas:success
-        target: region_join
-      - id: e_emea_join
-        source: rollout_emea:success
-        target: region_join
-      - id: e_apac_join
-        source: rollout_apac:success
-        target: region_join
+        target: stage_fork
+      - id: e_stage_core
+        source: stage_fork:fork
+        target: rollout_core
+      - id: e_stage_edge
+        source: stage_fork:fork
+        target: rollout_edge
+      - id: e_stage_access
+        source: stage_fork:fork
+        target: rollout_access
+      - id: e_core_join
+        source: rollout_core:success
+        target: stage_join
+      - id: e_edge_join
+        source: rollout_edge:success
+        target: stage_join
+      - id: e_access_join
+        source: rollout_access:success
+        target: stage_join
       - id: e_join_verify
-        source: region_join:joined
+        source: stage_join:joined
         target: verify
       - id: e_join_failed
-        source: region_join:join_failed
+        source: stage_join:join_failed
         target: failed
       - id: e_verify_done
         source: verify:success
@@ -1195,7 +1196,7 @@ flows:
       - handler: noop
         id: prepare
         kind: ACTION
-        name: Prepare regional rollout
+        name: Prepare staged rollout
         phase: PREPARE
         policy:
           timeout_sec: 30
@@ -1204,18 +1205,18 @@ flows:
           evidence_required: false
         position_x: 360
         position_y: 180
-      - id: region_fork
-        name: Fan out by region
+      - id: stage_fork
+        name: Fan out by role
         position_x: 720
         position_y: 180
         type: fork
       - params:
-          message: '{{ vars.DEMO_SLEEP_MESSAGE }} — Americas stage for {{ vars.DEMO_REGION_PRIMARY }}'
+          message: '{{ vars.DEMO_SLEEP_MESSAGE }} — core stage for {{ vars.DEMO_REGION_PRIMARY }}'
           seconds: 1
         handler: actions.sleep
-        id: rollout_americas
+        id: rollout_core
         kind: ACTION
-        name: Americas stage
+        name: Core stage
         phase: IMPLEMENTATION
         policy:
           timeout_sec: 60
@@ -1226,14 +1227,14 @@ flows:
         position_y: -180
         target_selectors:
         - type: role
-          role: branch_americas
+          role: core
       - params:
-          message: Roll out EMEA stage for {{ vars.DEMO_REGION_PRIMARY }}
+          message: Roll out edge stage for {{ vars.DEMO_REGION_PRIMARY }}
           seconds: 1
         handler: actions.sleep
-        id: rollout_emea
+        id: rollout_edge
         kind: ACTION
-        name: EMEA stage
+        name: Edge stage
         phase: IMPLEMENTATION
         policy:
           timeout_sec: 60
@@ -1244,14 +1245,14 @@ flows:
         position_y: 180
         target_selectors:
         - type: role
-          role: branch_emea
+          role: edge
       - params:
-          message: Roll out APAC stage for {{ vars.DEMO_REGION_BRANCH }}
+          message: Roll out access stage for {{ vars.DEMO_REGION_BRANCH }}
           seconds: 1
         handler: actions.sleep
-        id: rollout_apac
+        id: rollout_access
         kind: ACTION
-        name: APAC stage
+        name: Access stage
         phase: IMPLEMENTATION
         policy:
           timeout_sec: 60
@@ -1262,12 +1263,12 @@ flows:
         position_y: 540
         target_selectors:
         - type: role
-          role: branch_apac
+          role: access
       - cancel_policy: wait
         failure_policy: propagate
-        id: region_join
+        id: stage_join
         join_mode: all
-        name: Regional join
+        name: Stage join
         position_x: 1480
         position_y: 180
         type: join
@@ -1285,9 +1286,6 @@ flows:
           evidence_required: false
         position_x: 1840
         position_y: 180
-        target_selectors:
-        - type: role
-          role: verify_targets
       - id: failed
         name: Rollout failed
         position_x: 2200
@@ -1471,7 +1469,7 @@ flows:
             \ \\\n  -e \"s#__HEGEMONY_CLAB_WORKDIR__#${WORKDIR}#g\" \\\n  topology.clab.yml > \"${TOPOLOGY}\"\ncontainerlab\
             \ deploy -t \"${TOPOLOGY}\"\n"
           cpus: '1.0'
-          image: ghcr.io/srl-labs/clab:latest
+          image: ghcr.io/srl-labs/clab:0.77.0
           memory: 1g
           network_mode: host
           attach_docker_socket: true
@@ -1521,7 +1519,7 @@ flows:
             \ \\\n    topology.clab.yml > \"${TOPOLOGY}\"\nfi\ncontainerlab destroy -t \"${TOPOLOGY}\" --cleanup\nrm -rf \"\
             ${WORKDIR}\"\n"
           cpus: '1.0'
-          image: ghcr.io/srl-labs/clab:latest
+          image: ghcr.io/srl-labs/clab:0.77.0
           memory: 1g
           network_mode: host
           attach_docker_socket: true
@@ -1573,7 +1571,7 @@ flows:
             \ ]; then\n      echo \"TIMEOUT waiting for $r vtysh\" >&2\n      exit 1\n    fi\n  done\ndone\n"
           - echo "All 4 FRR routers are responding to vtysh."
           cpus: '0.25'
-          image: ghcr.io/srl-labs/clab:latest
+          image: ghcr.io/srl-labs/clab:0.77.0
           memory: 128m
           attach_docker_socket: true
           timeout_seconds: 90
@@ -1621,7 +1619,7 @@ flows:
             '
           - echo "Interaction complete"
           cpus: '0.5'
-          image: ghcr.io/srl-labs/clab:latest
+          image: ghcr.io/srl-labs/clab:0.77.0
           memory: 256m
           attach_docker_socket: true
           extra_mounts:
@@ -2042,10 +2040,11 @@ webhooks:
   description: Synthetic monitoring alarm that demonstrates event-driven readiness checks.
   flows:
   - 'Demo: parallel site readiness'
-  - 'Demo: containerlab parallel lab'
   auth_mode: hmac_sha256
   replay_window_seconds: 300
   rate_limit_per_minute: 60
+  allowed_source_ips:
+  - 192.0.2.0/24
   payload_mapping:
     run_name: $.alarm.name
     params:
@@ -2082,32 +2081,32 @@ flow_subscriptions:
 - flow: 'Demo: parallel site readiness'
   destination: 'Demo Webhook: Generic JSON'
   event: run.completed
-  enabled: true
+  enabled: false
 - flow: 'Demo: parallel site readiness'
   destination: 'Demo Webhook: Microsoft Teams'
   event: run.completed
-  enabled: true
+  enabled: false
 - flow: 'Demo: parallel site readiness'
   destination: 'Demo Webhook: Signed HMAC'
   event: run.completed
-  enabled: true
+  enabled: false
 - flow: 'Demo: parallel site readiness'
   destination: 'Demo Shoutrrr: Discord'
   event: run.completed
-  enabled: true
+  enabled: false
 - flow: 'Demo: parallel site readiness'
   destination: 'Demo Shoutrrr: Slack'
   event: run.completed
-  enabled: true
+  enabled: false
 - flow: 'Demo: parallel site readiness'
   destination: 'Demo Shoutrrr: Teams'
   event: run.completed
-  enabled: true
+  enabled: false
 - flow: 'Demo: parallel site readiness'
   destination: 'Demo Shoutrrr: Telegram'
   event: run.completed
-  enabled: true
+  enabled: false
 - flow: 'Demo: parallel site readiness'
   destination: 'Demo Shoutrrr: Ntfy'
   event: run.completed
-  enabled: true
+  enabled: false

@@ -11,7 +11,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -26,6 +26,8 @@ jobs:
   release:
     name: Publish Bundle Assets
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create GitHub releases and upload assets
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
