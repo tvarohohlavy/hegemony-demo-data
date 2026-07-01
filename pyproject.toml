@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+[project]
+name = "hegemony-demo-data"
+version = "0.1.0"
+description = "Generated demo Configuration Exchange data for Hegemony instance bootstrap"
+readme = "README.md"
+license = { text = "AGPL-3.0-or-later" }
+requires-python = ">=3.12"
+dependencies = [
+    "PyYAML==6.0.2",
+]
+
+[dependency-groups]
+dev = [
+    "pre-commit>=3.8.0",
+    "reuse>=6.2.0",
+]
+
+[tool.uv]
+package = false

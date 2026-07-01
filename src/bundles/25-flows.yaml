@@ -1,0 +1,1031 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+schema_version: 2
+
+flows:
+  - name: "Demo: parallel site readiness"
+    description: Demonstrates a change-readiness workflow with fork/join parallelism, tag-based target selectors, and a containerized plan-render step.
+    definition:
+      graph:
+        edges:
+          - id: e_start_intake
+            source: start:start
+            target: intake
+          - id: e_intake_fork
+            source: intake:success
+            target: fan_out
+          - id: e_fork_core
+            source: fan_out:fork
+            target: core_precheck
+          - id: e_fork_edge
+            source: fan_out:fork
+            target: edge_precheck
+          - id: e_fork_render
+            source: fan_out:fork
+            target: render_plan
+          - id: e_core_join
+            source: core_precheck:success
+            target: readiness_join
+          - id: e_edge_join
+            source: edge_precheck:success
+            target: readiness_join
+          - id: e_render_join
+            source: render_plan:success
+            target: readiness_join
+          - id: e_join_summary
+            source: readiness_join:joined
+            target: summarize
+          - id: e_join_failed
+            source: readiness_join:join_failed
+            target: failed
+          - id: e_summary_done
+            source: summarize:success
+            target: done
+        nodes:
+          - id: done
+            name: Ready
+            position_x: 2200
+            position_y: 160
+            terminal_status: success
+            type: terminal
+          - handler: noop
+            id: intake
+            kind: ACTION
+            name: Intake change request
+            phase: PREPARE
+            policy:
+              timeout_sec: 30
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+            position_x: 360
+            position_y: 160
+          - id: fan_out
+            name: Parallel readiness checks
+            position_x: 720
+            position_y: 160
+            type: fork
+          - handler: noop
+            id: core_precheck
+            kind: CHECK
+            name: Core pre-checks
+            phase: PREPARE
+            policy:
+              timeout_sec: 30
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+            position_x: 1080
+            position_y: -160
+            target_selectors:
+              - type: role
+                role: core
+          - handler: noop
+            id: edge_precheck
+            kind: CHECK
+            name: Edge pre-checks
+            phase: PREPARE
+            policy:
+              timeout_sec: 30
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+            position_x: 1080
+            position_y: 160
+            target_selectors:
+              - type: role
+                role: edge
+          - params:
+              command:
+                - 'echo "Hegemony demo container: rendering readiness plan"'
+                - "test -f change-plan.json && cat change-plan.json"
+                - 'printf "plan_status=ready change_id=%s\n" "$CHANGE_ID"'
+              cpus: "0.25"
+              env:
+                CHANGE_ID: "{{ vars.DEMO_CHANGE_ID }}"
+                RUN_LABEL: "{{ vars.DEMO_RUN_LABEL }}"
+                ENV: "{{ vars.DEMO_ENV }}"
+                PREPARE_MESSAGE: "{{ vars.DEMO_PREPARE_MESSAGE }}"
+              image: alpine:3.20
+              memory: 128m
+              timeout_seconds: 60
+              working_dir: /workspace
+            handler: actions.run_container
+            id: render_plan
+            kind: EXECUTE
+            mounted_files:
+              - change-plan.json
+            name: Render plan in container
+            phase: PREPARE
+            policy:
+              timeout_sec: 90
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+            position_x: 1080
+            position_y: 480
+          - cancel_policy: wait
+            failure_policy: propagate
+            id: readiness_join
+            join_mode: all
+            name: Readiness gate
+            position_x: 1480
+            position_y: 160
+            type: join
+          - handler: noop
+            id: summarize
+            kind: ACTION
+            name: Summarize readiness
+            phase: VERIFY
+            policy:
+              timeout_sec: 30
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+            position_x: 1840
+            position_y: 160
+          - id: failed
+            name: Readiness failed
+            position_x: 2200
+            position_y: 480
+            terminal_status: failure
+            type: terminal
+          - id: start
+            name: Start
+            position_x: 0
+            position_y: 160
+            type: start
+  - name: "Demo: staged branch rollout"
+    description: Demonstrates a multi-region rollout fan-out with parallel regional stages and an all-branches join before verification.
+    definition:
+      graph:
+        edges:
+          - id: e_start_prepare
+            source: start:start
+            target: prepare
+          - id: e_prepare_regions
+            source: prepare:success
+            target: region_fork
+          - id: e_regions_americas
+            source: region_fork:fork
+            target: rollout_americas
+          - id: e_regions_emea
+            source: region_fork:fork
+            target: rollout_emea
+          - id: e_regions_apac
+            source: region_fork:fork
+            target: rollout_apac
+          - id: e_americas_join
+            source: rollout_americas:success
+            target: region_join
+          - id: e_emea_join
+            source: rollout_emea:success
+            target: region_join
+          - id: e_apac_join
+            source: rollout_apac:success
+            target: region_join
+          - id: e_join_verify
+            source: region_join:joined
+            target: verify
+          - id: e_join_failed
+            source: region_join:join_failed
+            target: failed
+          - id: e_verify_done
+            source: verify:success
+            target: done
+        nodes:
+          - id: done
+            name: Rollout complete
+            position_x: 2200
+            position_y: 180
+            terminal_status: success
+            type: terminal
+          - handler: noop
+            id: prepare
+            kind: ACTION
+            name: Prepare regional rollout
+            phase: PREPARE
+            policy:
+              timeout_sec: 30
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+            position_x: 360
+            position_y: 180
+          - id: region_fork
+            name: Fan out by region
+            position_x: 720
+            position_y: 180
+            type: fork
+          - params:
+              message: "{{ vars.DEMO_SLEEP_MESSAGE }} — Americas stage for {{ vars.DEMO_REGION_PRIMARY }}"
+              seconds: 1
+            handler: actions.sleep
+            id: rollout_americas
+            kind: ACTION
+            name: Americas stage
+            phase: IMPLEMENTATION
+            policy:
+              timeout_sec: 60
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+            position_x: 1080
+            position_y: -180
+            target_selectors:
+              - type: role
+                role: branch_americas
+          - params:
+              message: "Roll out EMEA stage for {{ vars.DEMO_REGION_PRIMARY }}"
+              seconds: 1
+            handler: actions.sleep
+            id: rollout_emea
+            kind: ACTION
+            name: EMEA stage
+            phase: IMPLEMENTATION
+            policy:
+              timeout_sec: 60
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+            position_x: 1080
+            position_y: 180
+            target_selectors:
+              - type: role
+                role: branch_emea
+          - params:
+              message: "Roll out APAC stage for {{ vars.DEMO_REGION_BRANCH }}"
+              seconds: 1
+            handler: actions.sleep
+            id: rollout_apac
+            kind: ACTION
+            name: APAC stage
+            phase: IMPLEMENTATION
+            policy:
+              timeout_sec: 60
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+            position_x: 1080
+            position_y: 540
+            target_selectors:
+              - type: role
+                role: branch_apac
+          - cancel_policy: wait
+            failure_policy: propagate
+            id: region_join
+            join_mode: all
+            name: Regional join
+            position_x: 1480
+            position_y: 180
+            type: join
+          - params:
+              message: "{{ vars.DEMO_VERIFY_MESSAGE }}"
+            handler: noop
+            id: verify
+            kind: CHECK
+            name: Verify rollout summary
+            phase: VERIFY
+            policy:
+              timeout_sec: 30
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+            position_x: 1840
+            position_y: 180
+            target_selectors:
+              - type: role
+                role: verify_targets
+          - id: failed
+            name: Rollout failed
+            position_x: 2200
+            position_y: 540
+            terminal_status: failure
+            type: terminal
+          - id: start
+            name: Start
+            position_x: 0
+            position_y: 180
+            type: start
+  - name: "Demo: containerized config render"
+    description: Demonstrates using a flow attachment as container input, rendering candidate configuration in an isolated container, then validating the output.
+    definition:
+      graph:
+        edges:
+          - id: e_start_collect
+            source: start:start
+            target: collect_context
+          - id: e_collect_render
+            source: collect_context:success
+            target: render_candidate
+          - id: e_render_validate
+            source: render_candidate:success
+            target: validate_candidate
+          - id: e_validate_done
+            source: validate_candidate:success
+            target: done
+        nodes:
+          - id: done
+            name: Candidate ready
+            position_x: 1580
+            position_y: 120
+            terminal_status: success
+            type: terminal
+          - handler: noop
+            id: collect_context
+            kind: ACTION
+            name: Collect render context
+            phase: PREPARE
+            policy:
+              timeout_sec: 30
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+            position_x: 380
+            position_y: 120
+          - params:
+              command:
+                - 'echo "Hegemony demo container: rendering interface template"'
+                - "cat templates/interface.j2"
+                - 'printf "rendered_for=%s region=%s\n" "$CHANGE_ID" "$REGION"'
+              cpus: "0.25"
+              env:
+                CHANGE_ID: "{{ vars.DEMO_CHANGE_ID }}"
+                REGION: "{{ vars.DEMO_REGION_PRIMARY }}"
+              image: alpine:3.20
+              memory: 128m
+              timeout_seconds: 60
+              working_dir: /workspace
+            handler: actions.run_container
+            id: render_candidate
+            kind: EXECUTE
+            mounted_files:
+              - templates/
+            name: Render candidate config
+            phase: IMPLEMENTATION
+            policy:
+              timeout_sec: 90
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+            position_x: 780
+            position_y: 120
+          - handler: noop
+            id: validate_candidate
+            kind: CHECK
+            name: Validate candidate
+            phase: VERIFY
+            policy:
+              timeout_sec: 30
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+            position_x: 1180
+            position_y: 120
+          - id: start
+            name: Start
+            position_x: 0
+            position_y: 120
+            type: start
+  - name: "Demo: containerlab parallel lab"
+    description: >-
+      Spins up a 4-router (FRRouting) full-mesh containerlab topology in one
+      branch and runs an interaction sub-flow in parallel. Branch A deploys
+      the lab, holds it alive briefly, then destroys it cleanly. Branch B
+      first waits for FRR's `vtysh` to respond on all 4 routers (the
+      definitive readiness signal), then runs an interactive probe
+      (docker exec into each router) showing OSPF neighbors and routes via
+      `vtysh` (Cisco-IOS-style CLI). Requires the `containerlab` image and
+      the public `quay.io/frrouting/frr` image. FRR is light (~30 MB RAM
+      per node) and boots in seconds, so the demo runs end-to-end in well
+      under a minute of useful time.
+    definition:
+      graph:
+        edges:
+          - id: e_start_prepare
+            source: start:start
+            target: prepare
+          - id: e_prepare_fork
+            source: prepare:success
+            target: lab_fork
+          - id: e_fork_deploy
+            source: lab_fork:fork
+            target: deploy_lab
+          - id: e_fork_wait_delay
+            source: lab_fork:fork
+            target: wait_boot_delay
+          - id: e_wait_delay_wait
+            source: wait_boot_delay:success
+            target: wait_reachable
+          - id: e_deploy_hold
+            source: deploy_lab:success
+            target: hold_lab
+          - id: e_hold_destroy
+            source: hold_lab:success
+            target: destroy_lab
+          - id: e_destroy_join
+            source: destroy_lab:success
+            target: lab_join
+          - id: e_wait_interact
+            source: wait_reachable:success
+            target: interact_routers
+          - id: e_interact_join
+            source: interact_routers:success
+            target: lab_join
+          # Failure edges: ensure both branches always converge on lab_join
+          # (and that we still attempt cleanup if deploy fails).
+          - id: e_deploy_fail_destroy
+            source: deploy_lab:failure
+            target: destroy_lab
+          - id: e_destroy_fail_join
+            source: destroy_lab:failure
+            target: lab_join
+          - id: e_wait_delay_fail_join
+            source: wait_boot_delay:failure
+            target: lab_join
+          - id: e_wait_fail_join
+            source: wait_reachable:failure
+            target: lab_join
+          - id: e_interact_fail_join
+            source: interact_routers:failure
+            target: lab_join
+          - id: e_join_done
+            source: lab_join:joined
+            target: done
+          - id: e_join_failed
+            source: lab_join:join_failed
+            target: failed
+        nodes:
+          - id: start
+            name: Start
+            position_x: 0
+            position_y: 180
+            type: start
+          - handler: noop
+            id: prepare
+            kind: ACTION
+            name: Prepare lab demo
+            phase: PREPARE
+            policy:
+              timeout_sec: 30
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+            position_x: 360
+            position_y: 180
+          - id: lab_fork
+            name: Fan out (lab + interaction)
+            position_x: 720
+            position_y: 180
+            type: fork
+          # ── Branch A: deploy → hold → destroy ─────────────────────────────
+          - params:
+              command:
+                # mounted_files below are materialised into working_dir, which
+                # is bind-mounted 1:1 with the host at a per-run workspace. That
+                # means the bind sources in topology.clab.yml resolve to the
+                # same absolute path on both the orchestrator and the host
+                # docker daemon (which actually creates the router containers).
+                - |
+                  set -e
+                  LAB_ID="$(printf '%s' "{{ run_id }}" | tr -c 'A-Za-z0-9_.-' '-')"
+                  LAB_NAME="hegemony-demo-${LAB_ID}"
+                  WORKDIR="/tmp/hegemony-clab-${LAB_ID}"
+                  TOPOLOGY="${WORKDIR}/topology.run.clab.yml"
+                  sed \
+                    -e "s#__HEGEMONY_CLAB_NAME__#${LAB_NAME}#g" \
+                    -e "s#__HEGEMONY_CLAB_WORKDIR__#${WORKDIR}#g" \
+                    topology.clab.yml > "${TOPOLOGY}"
+                  containerlab deploy -t "${TOPOLOGY}"
+              cpus: "1.0"
+              image: ghcr.io/srl-labs/clab:latest
+              memory: 1g
+              # clab drives the host Docker daemon (DinD via the socket) and
+              # creates its own bridges; runs on the host network so it can.
+              network_mode: host
+              attach_docker_socket: true
+              privileged: true
+              # clab inspects sibling container PIDs and opens their netns
+              # paths via /var/run/netns. Share both with the host.
+              pid_mode: host
+              extra_mounts:
+                - "/var/run/netns:/var/run/netns:shared"
+                # clab writes /etc/hosts into each node by opening
+                # /var/lib/docker/containers/<id>/hosts (a host-side path).
+                - "/var/lib/docker:/var/lib/docker"
+                # Shared staging dir: identical path inside orchestrator and on
+                # host, so bind sources referenced from topology.clab.yml
+                # (e.g. /tmp/hegemony-clab-<run_id>/frr/r1.conf) exist on both sides.
+                - "/tmp/hegemony-clab-{{ run_id }}:/tmp/hegemony-clab-{{ run_id }}"
+              timeout_seconds: 600
+              working_dir: /tmp/hegemony-clab-{{ run_id }}
+            handler: actions.run_container
+            id: deploy_lab
+            kind: EXECUTE
+            mounted_files:
+              - topology.clab.yml
+              - frr/
+            name: Deploy lab (4-router full mesh)
+            phase: IMPLEMENTATION
+            policy:
+              timeout_sec: 660
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+            position_x: 1080
+            position_y: -100
+          - params:
+              seconds: 60
+              message: "Holding lab alive briefly while branch B waits for NOS boot + interacts"
+            handler: actions.sleep
+            id: hold_lab
+            kind: ACTION
+            name: Hold lab alive (60s)
+            phase: IMPLEMENTATION
+            policy:
+              timeout_sec: 90
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+            position_x: 1440
+            position_y: -100
+          - params:
+              command:
+                - |
+                  set -e
+                  LAB_ID="$(printf '%s' "{{ run_id }}" | tr -c 'A-Za-z0-9_.-' '-')"
+                  LAB_NAME="hegemony-demo-${LAB_ID}"
+                  WORKDIR="/tmp/hegemony-clab-${LAB_ID}"
+                  TOPOLOGY="${WORKDIR}/topology.run.clab.yml"
+                  if [ ! -f "${TOPOLOGY}" ]; then
+                    sed \
+                      -e "s#__HEGEMONY_CLAB_NAME__#${LAB_NAME}#g" \
+                      -e "s#__HEGEMONY_CLAB_WORKDIR__#${WORKDIR}#g" \
+                      topology.clab.yml > "${TOPOLOGY}"
+                  fi
+                  containerlab destroy -t "${TOPOLOGY}" --cleanup
+                  rm -rf "${WORKDIR}"
+              cpus: "1.0"
+              image: ghcr.io/srl-labs/clab:latest
+              memory: 1g
+              network_mode: host
+              attach_docker_socket: true
+              privileged: true
+              pid_mode: host
+              extra_mounts:
+                - "/var/run/netns:/var/run/netns:shared"
+                - "/var/lib/docker:/var/lib/docker"
+                - "/tmp/hegemony-clab-{{ run_id }}:/tmp/hegemony-clab-{{ run_id }}"
+              timeout_seconds: 300
+              working_dir: /tmp/hegemony-clab-{{ run_id }}
+            handler: actions.run_container
+            id: destroy_lab
+            kind: EXECUTE
+            mounted_files:
+              - topology.clab.yml
+              - frr/
+            name: Destroy lab
+            phase: VERIFY
+            policy:
+              timeout_sec: 300
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+            position_x: 1800
+            position_y: -100
+          # ── Branch B: initial delay → wait for FRR readiness → interact ──
+          # FRR's docker-start launches zebra + ospfd in a few seconds. We
+          # still sleep briefly so the router containers actually exist
+          # before we try `docker exec`, then poll `vtysh -c 'show version'`
+          # which only succeeds once the FRR daemons are up and listening.
+          - params:
+              seconds: 10
+              message: "Giving containerlab time to create router containers before probing FRR readiness"
+            handler: actions.sleep
+            id: wait_boot_delay
+            kind: ACTION
+            name: Wait for containers to exist (10s)
+            phase: VERIFY
+            policy:
+              timeout_sec: 60
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+            position_x: 1080
+            position_y: 400
+          - params:
+              command:
+                - 'echo "Waiting for FRR vtysh to respond on r1..r4..."'
+                - |
+                  for r in r1 r2 r3 r4; do
+                    LAB_ID="$(printf '%s' "{{ run_id }}" | tr -c 'A-Za-z0-9_.-' '-')"
+                    LAB_NAME="hegemony-demo-${LAB_ID}"
+                    CONTAINER="clab-${LAB_NAME}-$r"
+                    echo "--- waiting for ${CONTAINER} ---"
+                    for i in $(seq 1 20); do
+                      if docker exec "${CONTAINER}" vtysh -c 'show version' >/dev/null 2>&1; then
+                        echo "ready: $r (after ${i} attempt(s))"
+                        break
+                      fi
+                      sleep 2
+                      if [ "$i" = "20" ]; then
+                        echo "TIMEOUT waiting for $r vtysh" >&2
+                        exit 1
+                      fi
+                    done
+                  done
+                - 'echo "All 4 FRR routers are responding to vtysh."'
+              cpus: "0.25"
+              image: ghcr.io/srl-labs/clab:latest
+              memory: 128m
+              # Needs the host Docker socket to exec into router containers
+              # spawned by clab on the host daemon.
+              attach_docker_socket: true
+              timeout_seconds: 90
+              working_dir: /workspace
+            handler: actions.run_container
+            id: wait_reachable
+            kind: CHECK
+            mounted_files: []
+            name: Wait for FRR vtysh ready
+            phase: VERIFY
+            policy:
+              timeout_sec: 120
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+            position_x: 1440
+            position_y: 400
+          - params:
+              command:
+                - 'echo "=== Inspecting clab topology ==="'
+                - |
+                  LAB_ID="$(printf '%s' "{{ run_id }}" | tr -c 'A-Za-z0-9_.-' '-')"
+                  LAB_NAME="hegemony-demo-${LAB_ID}"
+                  WORKDIR="/tmp/hegemony-clab-${LAB_ID}"
+                  TOPOLOGY="${WORKDIR}/topology.run.clab.yml"
+                  containerlab inspect -t "${TOPOLOGY}" || true
+                - |
+                  LAB_ID="$(printf '%s' "{{ run_id }}" | tr -c 'A-Za-z0-9_.-' '-')"
+                  LAB_NAME="hegemony-demo-${LAB_ID}"
+                  for r in r1 r2 r3 r4; do
+                    echo "=== $r: OSPF neighbors ==="
+                    docker exec "clab-${LAB_NAME}-$r" vtysh -c 'show ip ospf neighbor' || true
+                  done
+                - |
+                  LAB_ID="$(printf '%s' "{{ run_id }}" | tr -c 'A-Za-z0-9_.-' '-')"
+                  LAB_NAME="hegemony-demo-${LAB_ID}"
+                  for r in r1 r2 r3 r4; do
+                    echo "=== $r: routes learned via OSPF ==="
+                    docker exec "clab-${LAB_NAME}-$r" vtysh -c 'show ip route ospf' || true
+                  done
+                - 'echo "=== Cross-mesh ping: r1 → r4 loopback (10.255.255.4) ==="'
+                - |
+                  LAB_ID="$(printf '%s' "{{ run_id }}" | tr -c 'A-Za-z0-9_.-' '-')"
+                  LAB_NAME="hegemony-demo-${LAB_ID}"
+                  docker exec "clab-${LAB_NAME}-r1" ping -c 3 -W 2 10.255.255.4 || true
+                - 'echo "Interaction complete"'
+              cpus: "0.5"
+              image: ghcr.io/srl-labs/clab:latest
+              memory: 256m
+              # Needs the host Docker socket to exec into the router containers
+              # spawned by clab on the host daemon.
+              attach_docker_socket: true
+              extra_mounts:
+                - "/tmp/hegemony-clab-{{ run_id }}:/tmp/hegemony-clab-{{ run_id }}"
+              timeout_seconds: 180
+              working_dir: /tmp/hegemony-clab-{{ run_id }}
+            handler: actions.run_container
+            id: interact_routers
+            kind: EXECUTE
+            mounted_files:
+              - topology.clab.yml
+            name: Interact with routers (vtysh)
+            phase: VERIFY
+            policy:
+              timeout_sec: 240
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+            position_x: 1800
+            position_y: 400
+          - cancel_policy: wait
+            failure_policy: propagate
+            id: lab_join
+            join_mode: all
+            name: Lab + interaction join
+            position_x: 2160
+            position_y: 180
+            type: join
+          - id: done
+            name: Lab demo complete
+            position_x: 2520
+            position_y: 60
+            terminal_status: success
+            type: terminal
+          - id: failed
+            name: Lab demo failed
+            position_x: 2520
+            position_y: 360
+            terminal_status: failure
+            type: terminal
+
+flow_attachments:
+  - flow: "Demo: parallel site readiness"
+    filename: change-plan.json
+    content: |
+      {
+        "change_id": "{{ vars.DEMO_CHANGE_ID }}",
+        "window": "{{ vars.DEMO_MAINTENANCE_WINDOW }}",
+        "parallel_branches": ["core_precheck", "edge_precheck", "render_plan"],
+        "contact": "{{ vars.DEMO_CONTACT }}"
+      }
+  - flow: "Demo: containerized config render"
+    filename: templates/interface.j2
+    content: |
+      interface Loopback100
+       description Rendered by Hegemony demo for {{ vars.DEMO_CHANGE_ID }}
+       ip address 198.51.100.10 255.255.255.255
+      !
+  - flow: "Demo: containerlab parallel lab"
+    filename: topology.clab.yml
+    content: |
+      name: __HEGEMONY_CLAB_NAME__
+      mgmt:
+        network: __HEGEMONY_CLAB_NAME__
+      topology:
+        kinds:
+          linux:
+            image: quay.io/frrouting/frr:9.1.0
+            # Shared FRR daemons enablement file: every router runs zebra
+            # (forwarding + interfaces) and ospfd (the routing protocol we
+            # demo). Per-router frr.conf is bound below.
+            #
+            # Bind sources reference a per-run host workspace because the orchestrator
+            # mounts that path 1:1 with the host. Files in /workspace are only
+            # inside the orchestrator and would fail to mount on host docker.
+            binds:
+              - __HEGEMONY_CLAB_WORKDIR__/frr/daemons:/etc/frr/daemons
+              - __HEGEMONY_CLAB_WORKDIR__/frr/vtysh.conf:/etc/frr/vtysh.conf
+            # FRR's containerised entrypoint wraps the daemons under tini.
+            cmd: "/sbin/tini -- /usr/lib/frr/docker-start"
+        nodes:
+          r1:
+            kind: linux
+            binds:
+              - __HEGEMONY_CLAB_WORKDIR__/frr/r1.conf:/etc/frr/frr.conf
+          r2:
+            kind: linux
+            binds:
+              - __HEGEMONY_CLAB_WORKDIR__/frr/r2.conf:/etc/frr/frr.conf
+          r3:
+            kind: linux
+            binds:
+              - __HEGEMONY_CLAB_WORKDIR__/frr/r3.conf:/etc/frr/frr.conf
+          r4:
+            kind: linux
+            binds:
+              - __HEGEMONY_CLAB_WORKDIR__/frr/r4.conf:/etc/frr/frr.conf
+        links:
+          # Full mesh, 6 point-to-point links between 4 routers.
+          # clab assigns eth1.. ethN inside each container in declaration order.
+          - endpoints: ["r1:eth1", "r2:eth1"]   # 10.0.12.0/30
+          - endpoints: ["r1:eth2", "r3:eth1"]   # 10.0.13.0/30
+          - endpoints: ["r1:eth3", "r4:eth1"]   # 10.0.14.0/30
+          - endpoints: ["r2:eth2", "r3:eth2"]   # 10.0.23.0/30
+          - endpoints: ["r2:eth3", "r4:eth2"]   # 10.0.24.0/30
+          - endpoints: ["r3:eth3", "r4:eth3"]   # 10.0.34.0/30
+  - flow: "Demo: containerlab parallel lab"
+    filename: frr/daemons
+    content: |
+      zebra=yes
+      bgpd=no
+      ospfd=yes
+      ospf6d=no
+      ripd=no
+      ripngd=no
+      isisd=no
+      pimd=no
+      ldpd=no
+      nhrpd=no
+      eigrpd=no
+      babeld=no
+      sharpd=no
+      pbrd=no
+      bfdd=no
+      fabricd=no
+      vrrpd=no
+
+      vtysh_enable=yes
+      zebra_options="  -A 127.0.0.1 -s 90000000"
+      bgpd_options="   -A 127.0.0.1"
+      ospfd_options="  -A 127.0.0.1"
+      ospf6d_options=" -A ::1"
+      ripd_options="   -A 127.0.0.1"
+      ripngd_options=" -A ::1"
+      isisd_options="  -A 127.0.0.1"
+      pimd_options="   -A 127.0.0.1"
+      ldpd_options="   -A 127.0.0.1"
+      nhrpd_options="  -A 127.0.0.1"
+      eigrpd_options=" -A 127.0.0.1"
+      babeld_options=" -A 127.0.0.1"
+      sharpd_options=" -A 127.0.0.1"
+      pbrd_options="   -A 127.0.0.1"
+      staticd_options="-A 127.0.0.1"
+      bfdd_options="   -A 127.0.0.1"
+      fabricd_options="-A 127.0.0.1"
+      vrrpd_options="  -A 127.0.0.1"
+  - flow: "Demo: containerlab parallel lab"
+    filename: frr/vtysh.conf
+    content: |
+      service integrated-vtysh-config
+  - flow: "Demo: containerlab parallel lab"
+    filename: frr/r1.conf
+    content: |
+      frr version 9.1
+      frr defaults traditional
+      hostname r1
+      service integrated-vtysh-config
+      !
+      interface lo
+       ip address 10.255.255.1/32
+      !
+      interface eth1
+       description to-r2
+       ip address 10.0.12.1/30
+      !
+      interface eth2
+       description to-r3
+       ip address 10.0.13.1/30
+      !
+      interface eth3
+       description to-r4
+       ip address 10.0.14.1/30
+      !
+      router ospf
+       ospf router-id 10.255.255.1
+       network 10.0.12.0/30 area 0
+       network 10.0.13.0/30 area 0
+       network 10.0.14.0/30 area 0
+       network 10.255.255.1/32 area 0
+      !
+  - flow: "Demo: containerlab parallel lab"
+    filename: frr/r2.conf
+    content: |
+      frr version 9.1
+      frr defaults traditional
+      hostname r2
+      service integrated-vtysh-config
+      !
+      interface lo
+       ip address 10.255.255.2/32
+      !
+      interface eth1
+       description to-r1
+       ip address 10.0.12.2/30
+      !
+      interface eth2
+       description to-r3
+       ip address 10.0.23.1/30
+      !
+      interface eth3
+       description to-r4
+       ip address 10.0.24.1/30
+      !
+      router ospf
+       ospf router-id 10.255.255.2
+       network 10.0.12.0/30 area 0
+       network 10.0.23.0/30 area 0
+       network 10.0.24.0/30 area 0
+       network 10.255.255.2/32 area 0
+      !
+  - flow: "Demo: containerlab parallel lab"
+    filename: frr/r3.conf
+    content: |
+      frr version 9.1
+      frr defaults traditional
+      hostname r3
+      service integrated-vtysh-config
+      !
+      interface lo
+       ip address 10.255.255.3/32
+      !
+      interface eth1
+       description to-r1
+       ip address 10.0.13.2/30
+      !
+      interface eth2
+       description to-r2
+       ip address 10.0.23.2/30
+      !
+      interface eth3
+       description to-r4
+       ip address 10.0.34.1/30
+      !
+      router ospf
+       ospf router-id 10.255.255.3
+       network 10.0.13.0/30 area 0
+       network 10.0.23.0/30 area 0
+       network 10.0.34.0/30 area 0
+       network 10.255.255.3/32 area 0
+      !
+  - flow: "Demo: containerlab parallel lab"
+    filename: frr/r4.conf
+    content: |
+      frr version 9.1
+      frr defaults traditional
+      hostname r4
+      service integrated-vtysh-config
+      !
+      interface lo
+       ip address 10.255.255.4/32
+      !
+      interface eth1
+       description to-r1
+       ip address 10.0.14.2/30
+      !
+      interface eth2
+       description to-r2
+       ip address 10.0.24.2/30
+      !
+      interface eth3
+       description to-r3
+       ip address 10.0.34.2/30
+      !
+      router ospf
+       ospf router-id 10.255.255.4
+       network 10.0.14.0/30 area 0
+       network 10.0.24.0/30 area 0
+       network 10.0.34.0/30 area 0
+       network 10.255.255.4/32 area 0
+      !
+
+webhooks:
+  - name: "Demo Webhook: CI change approved"
+    description: Synthetic CI/CD approval event that fans out readiness checks and renders a candidate plan.
+    flows:
+      - "Demo: parallel site readiness"
+      - "Demo: containerized config render"
+    auth_mode: hmac_sha256
+    replay_window_seconds: 300
+    rate_limit_per_minute: 30
+    allowed_source_ips:
+      - 192.0.2.0/24
+      - 198.51.100.0/24
+    payload_mapping:
+      run_name: $.change.summary
+      params:
+        change_id: $.change.id
+        approved_by: $.approval.user
+        source: ci
+    enabled: true
+  - name: "Demo Webhook: GitOps drift detected"
+    description: Synthetic GitOps drift event that starts the containerized render workflow.
+    flows:
+      - "Demo: containerized config render"
+    auth_mode: bearer
+    replay_window_seconds: 0
+    rate_limit_per_minute: 20
+    allowed_source_ips:
+      - 203.0.113.0/24
+    payload_mapping:
+      run_name: $.repository.full_name
+      params:
+        repository: $.repository.full_name
+        commit: $.after
+        source: gitops
+    enabled: true
+  - name: "Demo Webhook: Monitoring alarm"
+    description: Synthetic monitoring alarm that demonstrates event-driven readiness checks.
+    flows:
+      - "Demo: parallel site readiness"
+      - "Demo: containerlab parallel lab"
+    auth_mode: hmac_sha256
+    replay_window_seconds: 300
+    rate_limit_per_minute: 60
+    payload_mapping:
+      run_name: $.alarm.name
+      params:
+        alarm: $.alarm.name
+        severity: $.alarm.severity
+        source: monitoring
+    enabled: true
+  - name: "Demo Webhook: ITSM change window"
+    description: Synthetic ITSM change-window event that starts the staged branch rollout flow.
+    flows:
+      - "Demo: staged branch rollout"
+    auth_mode: hmac_sha256
+    replay_window_seconds: 600
+    rate_limit_per_minute: 15
+    allowed_source_ips:
+      - 192.0.2.0/24
+    payload_mapping:
+      run_name: $.number
+      params:
+        change_id: $.number
+        window_start: $.window.start
+        window_end: $.window.end
+        source: itsm
+    enabled: true
