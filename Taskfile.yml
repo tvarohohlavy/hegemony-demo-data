@@ -1,0 +1,57 @@
+#
+# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+version: "3"
+
+tasks:
+  setup:
+    desc: Install uv dependencies and pre-commit hooks
+    cmds:
+      - uv sync --frozen
+      - uv run pre-commit install --install-hooks
+
+  build:
+    desc: Generate committed single-YAML bootstrap bundles
+    cmds:
+      - PYTHONDONTWRITEBYTECODE=1 uv run python scripts/build.py
+
+  check:
+    desc: Verify generated bundles are current and semantically valid
+    cmds:
+      - PYTHONDONTWRITEBYTECODE=1 uv run python scripts/build.py --check
+      - PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate.py
+
+  validate:
+    desc: Validate semantic references in source bundles
+    cmds:
+      - PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate.py
+
+  checksums:
+    desc: Generate SHA256SUMS for releasable YAML bundles
+    cmds:
+      - PYTHONDONTWRITEBYTECODE=1 uv run python scripts/checksums.py > SHA256SUMS
+
+  reuse:lint:
+    desc: Verify REUSE 3.3 SPDX compliance
+    cmds:
+      - uv run reuse lint
+
+  release:check:
+    desc: Verify generated bundles and release checksums
+    cmds:
+      - task: check
+      - task: checksums
+      - task: reuse:lint
+
+  ci:
+    desc: Run the local equivalent of CI
+    cmds:
+      - task: check
+      - task: reuse:lint
+
+  precommit:
+    desc: Run every configured pre-commit hook
+    cmds:
+      - uv run pre-commit run --all-files

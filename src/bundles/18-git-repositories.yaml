@@ -1,0 +1,23 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Demo Git repositories. These are public GitHub sample repos used to
+# exercise the Git transport / sync surface without requiring credentials.
+# All repos are anonymous HTTPS clones — no auth_secret_ref / ssh_key_secret_ref.
+
+schema_version: 2
+
+git_repositories:
+  - name: pets-workshop
+    url: https://github.com/github-samples/pets-workshop.git
+    branch: main
+    sync_stale_seconds: 300
+  - name: gitfolio
+    url: https://github.com/github-samples/gitfolio.git
+    branch: main
+    sync_stale_seconds: 300
+  - name: task-dashboard
+    url: https://github.com/github-samples/task-dashboard.git
+    branch: main
+    sync_stale_seconds: 300

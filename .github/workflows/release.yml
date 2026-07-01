@@ -1,0 +1,75 @@
+#
+# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+name: Release Bundles
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONPYCACHEPREFIX: /tmp/hegemony-demo-data-pycache
+
+jobs:
+  release:
+    name: Publish Bundle Assets
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create GitHub releases and upload assets
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - uses: astral-sh/setup-uv@5a095e7a2014a4212f075830d4f7277575a9d098 # v7
+        with:
+          version: "0.9.28"
+          enable-cache: false
+
+      - run: uv sync --frozen
+
+      - name: Verify generated bundles
+        run: uv run python scripts/build.py --check
+
+      - name: Compile helper scripts
+        run: uv run python -m py_compile scripts/build.py scripts/checksums.py scripts/validate.py
+
+      - name: Verify REUSE metadata
+        run: uv run reuse lint
+
+      - name: Generate checksums
+        run: uv run python scripts/checksums.py > SHA256SUMS
+
+      - name: Verify release does not already exist
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "::error::Release ${GITHUB_REF_NAME} already exists; releases are immutable."
+            exit 1
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Publish GitHub Release assets
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist/*.yaml SHA256SUMS \
+            --title "${GITHUB_REF_NAME}" \
+            --notes "Hegemony demo instance bootstrap bundles for ${GITHUB_REF_NAME}." \
+            --verify-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
