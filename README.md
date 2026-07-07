@@ -50,7 +50,7 @@ uv run python scripts/build.py --check
 uv run python scripts/validate.py
 ```
 
-`--check` fails when `dist/hegemony-demo.single.yaml` is not in sync with the source fragments. `validate.py` fails on broken flow, site, destination, variable, or seeded `vault://` references. The pre-commit hook regenerates the bundle automatically.
+`--check` fails when `dist/hegemony-demo.single.yaml` is not in sync with the source fragments. `validate.py` fails on broken flow, site, destination, variable, or bundled `vault://` references. The pre-commit hook regenerates the bundle automatically.
 
 To generate release checksums:
 
@@ -63,6 +63,17 @@ uv run python scripts/checksums.py > SHA256SUMS
 Check this repository out beside the Hegemony repository, or set `HEGEMONY_BOOTSTRAP_HOST_DIR` to an absolute path ending in this repository's `dist` directory. The Hegemony demo compose overlay mounts the directory into the API container as `/bootstrap`, and the API imports it once for a fresh database.
 
 Instance bootstrap is intentionally one-shot. To apply changed demo data, reset the Hegemony database or import the generated bundle manually through Configuration Exchange.
+
+## Compatibility
+
+- Bundles use Configuration Exchange `schema_version: 2`. Hegemony validates
+  schema versions at import time and fails API startup with a clear error on
+  unsupported bundles.
+- Instance bootstrap ships in Hegemony releases **newer than 1.0.1**; older
+  releases ignore the mounted `/bootstrap` directory entirely.
+- For reproducible installs, consume a tagged release of this repository (see
+  [docs/release.md](docs/release.md)) instead of tracking `main`. Hegemony's
+  CI pins a specific commit of this repository for its bundle contract check.
 
 ## Docs
 

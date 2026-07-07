@@ -180,7 +180,7 @@ class Validator:
                 ref = match.group(1)
                 scheme, sep, target = ref.partition("://")
                 if sep and scheme == "vault" and target.strip("/") not in secret_paths:
-                    self.error(f"{location} references missing seeded secret {ref!r}")
+                    self.error(f"{location} references missing bundled secret {ref!r}")
             for match in VARS_REF_RE.finditer(value):
                 name = match.group(1) or match.group(2)
                 if name not in variables:
