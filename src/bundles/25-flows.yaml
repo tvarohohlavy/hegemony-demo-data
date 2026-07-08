@@ -50,7 +50,7 @@ flows:
             position_y: 160
             terminal_status: success
             type: terminal
-          - handler: noop
+          - handler: general.noop
             id: intake
             kind: ACTION
             name: Intake change request
@@ -67,7 +67,7 @@ flows:
             position_x: 720
             position_y: 160
             type: fork
-          - handler: noop
+          - handler: general.noop
             id: core_precheck
             kind: CHECK
             name: Core pre-checks
@@ -82,7 +82,7 @@ flows:
             target_selectors:
               - type: role
                 role: core
-          - handler: noop
+          - handler: general.noop
             id: edge_precheck
             kind: CHECK
             name: Edge pre-checks
@@ -112,7 +112,7 @@ flows:
               memory: 128m
               timeout_seconds: 60
               working_dir: /workspace
-            handler: actions.run_container
+            handler: container.run
             id: render_plan
             kind: EXECUTE
             mounted_files:
@@ -134,7 +134,7 @@ flows:
             position_x: 1480
             position_y: 160
             type: join
-          - handler: noop
+          - handler: general.noop
             id: summarize
             kind: ACTION
             name: Summarize readiness
@@ -202,7 +202,7 @@ flows:
             position_y: 180
             terminal_status: success
             type: terminal
-          - handler: noop
+          - handler: general.noop
             id: prepare
             kind: ACTION
             name: Prepare staged rollout
@@ -222,7 +222,7 @@ flows:
           - params:
               message: "{{ vars.DEMO_SLEEP_MESSAGE }} — core stage for {{ vars.DEMO_REGION_PRIMARY }}"
               seconds: 1
-            handler: actions.sleep
+            handler: general.sleep
             id: rollout_core
             kind: ACTION
             name: Core stage
@@ -240,7 +240,7 @@ flows:
           - params:
               message: "Roll out edge stage for {{ vars.DEMO_REGION_PRIMARY }}"
               seconds: 1
-            handler: actions.sleep
+            handler: general.sleep
             id: rollout_edge
             kind: ACTION
             name: Edge stage
@@ -258,7 +258,7 @@ flows:
           - params:
               message: "Roll out access stage for {{ vars.DEMO_REGION_BRANCH }}"
               seconds: 1
-            handler: actions.sleep
+            handler: general.sleep
             id: rollout_access
             kind: ACTION
             name: Access stage
@@ -283,7 +283,7 @@ flows:
             type: join
           - params:
               message: "{{ vars.DEMO_VERIFY_MESSAGE }}"
-            handler: noop
+            handler: general.noop
             id: verify
             kind: CHECK
             name: Verify rollout summary
@@ -330,7 +330,7 @@ flows:
             position_y: 120
             terminal_status: success
             type: terminal
-          - handler: noop
+          - handler: general.noop
             id: collect_context
             kind: ACTION
             name: Collect render context
@@ -355,7 +355,7 @@ flows:
               memory: 128m
               timeout_seconds: 60
               working_dir: /workspace
-            handler: actions.run_container
+            handler: container.run
             id: render_candidate
             kind: EXECUTE
             mounted_files:
@@ -369,7 +369,7 @@ flows:
               evidence_required: true
             position_x: 780
             position_y: 120
-          - handler: noop
+          - handler: general.noop
             id: validate_candidate
             kind: CHECK
             name: Validate candidate
@@ -460,7 +460,7 @@ flows:
             position_x: 0
             position_y: 180
             type: start
-          - handler: noop
+          - handler: general.noop
             id: prepare
             kind: ACTION
             name: Prepare lab demo
@@ -518,7 +518,7 @@ flows:
                 - "/tmp/hegemony-clab-{{ run_id }}:/tmp/hegemony-clab-{{ run_id }}"
               timeout_seconds: 600
               working_dir: /tmp/hegemony-clab-{{ run_id }}
-            handler: actions.run_container
+            handler: container.run
             id: deploy_lab
             kind: EXECUTE
             mounted_files:
@@ -536,7 +536,7 @@ flows:
           - params:
               seconds: 60
               message: "Holding lab alive briefly while branch B waits for NOS boot + interacts"
-            handler: actions.sleep
+            handler: general.sleep
             id: hold_lab
             kind: ACTION
             name: Hold lab alive (60s)
@@ -577,7 +577,7 @@ flows:
                 - "/tmp/hegemony-clab-{{ run_id }}:/tmp/hegemony-clab-{{ run_id }}"
               timeout_seconds: 300
               working_dir: /tmp/hegemony-clab-{{ run_id }}
-            handler: actions.run_container
+            handler: container.run
             id: destroy_lab
             kind: EXECUTE
             mounted_files:
@@ -600,7 +600,7 @@ flows:
           - params:
               seconds: 10
               message: "Giving containerlab time to create router containers before probing FRR readiness"
-            handler: actions.sleep
+            handler: general.sleep
             id: wait_boot_delay
             kind: ACTION
             name: Wait for containers to exist (10s)
@@ -642,7 +642,7 @@ flows:
               attach_docker_socket: true
               timeout_seconds: 90
               working_dir: /workspace
-            handler: actions.run_container
+            handler: container.run
             id: wait_reachable
             kind: CHECK
             mounted_files: []
@@ -694,7 +694,7 @@ flows:
                 - "/tmp/hegemony-clab-{{ run_id }}:/tmp/hegemony-clab-{{ run_id }}"
               timeout_seconds: 180
               working_dir: /tmp/hegemony-clab-{{ run_id }}
-            handler: actions.run_container
+            handler: container.run
             id: interact_routers
             kind: EXECUTE
             mounted_files:
