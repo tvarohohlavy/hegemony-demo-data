@@ -47,6 +47,10 @@ flows:
               attach_docker_socket: true
               network_mode: host
               timeout_seconds: 600
+              env:
+                # Single source of truth for the router login: the same vault
+                # secret the inventory provider hands to netcli.
+                LAB_PASSWORD: "{{ secret('vault://orgs/default/secrets/meridian/lab/ssh/password') }}"
               command:
                 - |
                   set -e
@@ -54,7 +58,8 @@ flows:
                   mkdir -p "${WORKDIR}"
                   cp -ar /attachments/* "${WORKDIR}/"
                   echo "Building meridian/frr-lab:latest ..."
-                  docker build -t meridian/frr-lab:latest "${WORKDIR}"
+                  docker build --build-arg LAB_PASSWORD="${LAB_PASSWORD}" \
+                    -t meridian/frr-lab:latest "${WORKDIR}"
             policy:
               timeout_sec: 660
               retries: 0
@@ -100,7 +105,9 @@ flows:
                     -e "s#__HEGEMONY_CLAB_NAME__#${LAB_NAME}#g" \
                     -e "s#__HEGEMONY_CLAB_WORKDIR__#${WORKDIR}#g" \
                     "${WORKDIR}/topology.clab.yml" > "${TOPOLOGY}"
-                  containerlab deploy -t "${TOPOLOGY}"
+                  # --reconfigure makes re-runs idempotent: a lab left running
+                  # (teardown gate rejected) is redeployed instead of erroring.
+                  containerlab deploy --reconfigure -t "${TOPOLOGY}"
             policy:
               timeout_sec: 660
               retries: 0
@@ -124,14 +131,17 @@ flows:
                 - |
                   set -e
                   # Give the Hegemony workers an interface on the lab management
-                  # network so netcli can SSH to 172.20.30.0/24. -q filters avoid
-                  # docker --format templates colliding with Jinja braces.
+                  # network so netcli can SSH to the routers. The compose service
+                  # label targets exactly the Hegemony workers (a name substring
+                  # would also catch unrelated containers such as NetBox workers);
+                  # -q filters avoid docker --format templates colliding with
+                  # Jinja braces.
                   COUNT=0
-                  for c in $(docker ps -q --filter name=worker); do
+                  for c in $(docker ps -q --filter label=com.docker.compose.service=worker); do
                     docker network connect meridian-lab-mgmt "$c" 2>/dev/null || true
                     COUNT=$((COUNT + 1))
                   done
-                  echo "Attached ${COUNT} worker container(s) to meridian-lab-mgmt"
+                  echo "Attached ${COUNT} worker container(s) to meridian-lab-mgmt ({{ vars.LAB_MGMT_SUBNET }})"
           - id: wait_ready
             name: Wait for FRR to answer on all routers
             type: step
@@ -188,16 +198,20 @@ flows:
               timeout_seconds: 300
               env:
                 GITEA_CONTAINER: meridian-gitea
-                GITEA_URL: "http://localhost:3000"
+                GITEA_URL: "{{ vars.GITEA_URL }}"
                 GITEA_ORG: "{{ vars.GITEA_ORG }}"
                 ADMIN_USER: "{{ secret('vault://orgs/default/secrets/meridian/gitea/admin/username') }}"
                 ADMIN_PASSWORD: "{{ secret('vault://orgs/default/secrets/meridian/gitea/admin/password') }}"
               command:
                 - |
-                  if [ "{{ inputs.deploy_gitea }}" != "True" ]; then
-                    echo "Gitea deployment skipped (deploy_gitea unchecked)."
-                    exit 0
-                  fi
+                  DEPLOY=$(printf '%s' "{{ inputs.deploy_gitea }}" | tr 'A-Z' 'a-z')
+                  case "$DEPLOY" in
+                    true|1|yes) ;;
+                    *)
+                      echo "Gitea deployment skipped (deploy_gitea unchecked)."
+                      exit 0
+                      ;;
+                  esac
                   set -e
                   docker rm -f meridian-gitea 2>/dev/null || true
                   docker run -d --name meridian-gitea \
@@ -266,12 +280,21 @@ flows:
                       "${WORKDIR}/topology.clab.yml" > "${TOPOLOGY}"
                   fi
                   containerlab destroy -t "${TOPOLOGY}" --cleanup || true
+                  # The workers attached during bootstrap still hold endpoints on
+                  # the management network; detach them or the network removal is
+                  # refused and the network (and worker interfaces) linger.
+                  for c in $(docker ps -aq --filter network=meridian-lab-mgmt); do
+                    docker network disconnect -f meridian-lab-mgmt "$c" 2>/dev/null || true
+                  done
                   docker network rm meridian-lab-mgmt 2>/dev/null || true
                   rm -rf "${WORKDIR}" || true
-                  if [ "{{ inputs.remove_gitea }}" = "True" ]; then
-                    docker rm -f meridian-gitea 2>/dev/null || true
-                    echo "Removed Gitea container."
-                  fi
+                  REMOVE_GITEA=$(printf '%s' "{{ inputs.remove_gitea }}" | tr 'A-Z' 'a-z')
+                  case "$REMOVE_GITEA" in
+                    true|1|yes)
+                      docker rm -f meridian-gitea 2>/dev/null || true
+                      echo "Removed Gitea container."
+                      ;;
+                  esac
                   echo "Teardown complete."
             policy:
               timeout_sec: 330

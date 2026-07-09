@@ -58,7 +58,8 @@ flows:
             position_x: 640
             position_y: 120
             params:
-              image: alpine:3.20
+              image: alpine/git:v2.45.2
+              entrypoint: /bin/sh
               working_dir: /workspace
               network_mode: host
               timeout_seconds: 180
@@ -68,27 +69,48 @@ flows:
               command:
                 - |
                   set -e
-                  apk add --no-cache git >/dev/null
+                  # Credentials never appear in the remote URL (they would leak
+                  # into evidence via git error output); git asks this helper.
+                  CRED_HELPER='!f() { echo "username=${GIT_USER}"; echo "password=${GIT_PASS}"; }; f'
+                  DRY=$(printf '%s' "{{ inputs.dry_run }}" | tr 'A-Z' 'a-z')
                   WORK=$(mktemp -d)
                   cd "$WORK"
-                  git init -q
+                  case "$DRY" in
+                    true|1|yes)
+                      DRY=true
+                      git init -q -b main .
+                      ;;
+                    *)
+                      DRY=false
+                      # Clone so each backup appends to the repository history.
+                      git -c credential.helper="$CRED_HELPER" clone -q \
+                        "http://localhost:3000/{{ vars.GITEA_ORG }}/config-backups.git" .
+                      ;;
+                  esac
                   git config user.email "{{ vars.NOC_CONTACT }}"
                   git config user.name "{{ vars.ORG_NAME }} Automation"
+                  rm -rf configs
                   mkdir -p configs
                   cp -ar /artifacts/collect_configs/* configs/ 2>/dev/null || true
                   COUNT=$(find configs -type f | wc -l)
-                  printf 'Change: %s\nDevices: %s\nGenerated: %s\n' \
-                    "{{ inputs.change_id }}" "$COUNT" "$(date -u +%FT%TZ)" > MANIFEST.txt
+                  if [ "$COUNT" -eq 0 ]; then
+                    echo "ERROR: no device configurations were collected" >&2
+                    exit 1
+                  fi
+                  {
+                    printf 'Change: %s\nDevices: %s\nGenerated: %s\n' \
+                      "{{ inputs.change_id }}" "$COUNT" "$(date -u +%FT%TZ)"
+                    printf 'Maintenance window: {{ vars.MAINT_WINDOW }}\n'
+                    printf 'Org standards: ntp={{ vars.NTP_PRIMARY }} dns={{ vars.DNS_PRIMARY }} syslog={{ vars.SYSLOG_PRIMARY }}\n'
+                  } > MANIFEST.txt
                   git add -A
                   git commit -q -m "{{ inputs.change_id }}: backup ${COUNT} device config(s)"
                   echo "Committed:"; git log --oneline -1
-                  if [ "{{ inputs.dry_run }}" = "True" ]; then
+                  if [ "$DRY" = "true" ]; then
                     echo "DRY RUN - not pushing. Contents:"
                     git show --stat --oneline HEAD | head -50
                   else
-                    git remote add origin \
-                      "http://${GIT_USER}:${GIT_PASS}@localhost:3000/{{ vars.GITEA_ORG }}/config-backups.git"
-                    git push -f origin HEAD:main
+                    git -c credential.helper="$CRED_HELPER" push -q origin HEAD:main
                     echo "Pushed to {{ vars.GITEA_URL }}/{{ vars.GITEA_ORG }}/config-backups"
                   fi
             policy:
@@ -228,7 +250,13 @@ flows:
             position_y: 200
             params:
               title: Approve service prefix announcement
-              message: "Advertise {{ inputs.service_address }} on the selected routers for {{ inputs.change_id }}?"
+              # Approval title/message are shown verbatim (no template
+              # rendering) — keep them static; the requested prefix and change
+              # ID are visible in the run's submitted inputs.
+              message: >-
+                Advertise the requested service prefix on the selected routers?
+                The prefix, OSPF settings and change ID are recorded in this
+                run's inputs. Standard maintenance window applies.
               timeout_seconds: 3600
             policy:
               timeout_sec: 3600
@@ -248,7 +276,7 @@ flows:
                 role: announce_targets
             params:
               commands:
-                - show running-config interface lo
+                - show running-config
                 - show ip route ospf
                 - show ip ospf neighbor
             policy:
@@ -274,8 +302,10 @@ flows:
                 - ip address {{ inputs.service_address }}/32
                 - "{% if inputs.advertise %}router ospf{% endif %}"
                 - "{% if inputs.advertise %}network {{ inputs.service_address }}/32 area {{ inputs.ospf_area }}{% endif %}"
+                # No `write memory`: frr.conf is a bind-mounted file, so FRR's
+                # config save cannot replace it; the change lives in running
+                # config, which is what the postchecks compare.
                 - end
-                - write memory
             policy:
               timeout_sec: 120
               retries: 0
@@ -294,7 +324,7 @@ flows:
                 role: announce_targets
             params:
               commands:
-                - show running-config interface lo
+                - show running-config
                 - show ip route ospf
                 - show ip ospf neighbor
             policy:

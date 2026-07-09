@@ -13,6 +13,11 @@
 # topology.clab.yml as image "meridian/frr-lab:latest".
 FROM quay.io/frrouting/frr:9.1.0
 
+# The login password is injected at build time from the meridian-lab-ssh vault
+# secret (see the Bootstrap flow's build step), so the secret stays the single
+# source of truth. The default only covers standalone `docker build` use.
+ARG LAB_PASSWORD=demo-lab-password
+
 # openssh for the SSH channel; shadow for chpasswd.
 RUN apk add --no-cache openssh openssh-server shadow \
     && ssh-keygen -A \
@@ -21,7 +26,7 @@ RUN apk add --no-cache openssh openssh-server shadow \
     && adduser -D -s /usr/bin/vtysh clab \
     && addgroup clab frr \
     && addgroup clab frrvty \
-    && echo "clab:demo-lab-password" | chpasswd
+    && echo "clab:${LAB_PASSWORD}" | chpasswd
 
 COPY entrypoint.sh /usr/local/bin/lab-entrypoint.sh
 RUN chmod +x /usr/local/bin/lab-entrypoint.sh

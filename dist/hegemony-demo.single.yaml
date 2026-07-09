@@ -520,20 +520,12 @@ flows:
           attach_docker_socket: true
           network_mode: host
           timeout_seconds: 600
+          env:
+            LAB_PASSWORD: '{{ secret(''vault://orgs/default/secrets/meridian/lab/ssh/password'') }}'
           command:
-          - 'set -e
-
-            WORKDIR=/tmp/meridian-lab
-
-            mkdir -p "${WORKDIR}"
-
-            cp -ar /attachments/* "${WORKDIR}/"
-
-            echo "Building meridian/frr-lab:latest ..."
-
-            docker build -t meridian/frr-lab:latest "${WORKDIR}"
-
-            '
+          - "set -e\nWORKDIR=/tmp/meridian-lab\nmkdir -p \"${WORKDIR}\"\ncp -ar /attachments/* \"${WORKDIR}/\"\necho \"Building\
+            \ meridian/frr-lab:latest ...\"\ndocker build --build-arg LAB_PASSWORD=\"${LAB_PASSWORD}\" \\\n  -t meridian/frr-lab:latest\
+            \ \"${WORKDIR}\"\n"
         policy:
           timeout_sec: 660
           retries: 0
@@ -571,7 +563,8 @@ flows:
           - "set -e\nLAB_NAME=meridian-lab\nWORKDIR=/tmp/meridian-lab\nTOPOLOGY=\"${WORKDIR}/topology.run.clab.yml\"\nmkdir\
             \ -p \"${WORKDIR}\"\ncp -ar /attachments/* \"${WORKDIR}/\"\nsed \\\n  -e \"s#__HEGEMONY_CLAB_NAME__#${LAB_NAME}#g\"\
             \ \\\n  -e \"s#__HEGEMONY_CLAB_WORKDIR__#${WORKDIR}#g\" \\\n  \"${WORKDIR}/topology.clab.yml\" > \"${TOPOLOGY}\"\
-            \ncontainerlab deploy -t \"${TOPOLOGY}\"\n"
+            \n# --reconfigure makes re-runs idempotent: a lab left running\n# (teardown gate rejected) is redeployed instead\
+            \ of erroring.\ncontainerlab deploy --reconfigure -t \"${TOPOLOGY}\"\n"
         policy:
           timeout_sec: 660
           retries: 0
@@ -592,10 +585,12 @@ flows:
           network_mode: host
           timeout_seconds: 120
           command:
-          - "set -e\n# Give the Hegemony workers an interface on the lab management\n# network so netcli can SSH to 172.20.30.0/24.\
-            \ -q filters avoid\n# docker --format templates colliding with Jinja braces.\nCOUNT=0\nfor c in $(docker ps -q\
-            \ --filter name=worker); do\n  docker network connect meridian-lab-mgmt \"$c\" 2>/dev/null || true\n  COUNT=$((COUNT\
-            \ + 1))\ndone\necho \"Attached ${COUNT} worker container(s) to meridian-lab-mgmt\"\n"
+          - "set -e\n# Give the Hegemony workers an interface on the lab management\n# network so netcli can SSH to the routers.\
+            \ The compose service\n# label targets exactly the Hegemony workers (a name substring\n# would also catch unrelated\
+            \ containers such as NetBox workers);\n# -q filters avoid docker --format templates colliding with\n# Jinja braces.\n\
+            COUNT=0\nfor c in $(docker ps -q --filter label=com.docker.compose.service=worker); do\n  docker network connect\
+            \ meridian-lab-mgmt \"$c\" 2>/dev/null || true\n  COUNT=$((COUNT + 1))\ndone\necho \"Attached ${COUNT} worker\
+            \ container(s) to meridian-lab-mgmt ({{ vars.LAB_MGMT_SUBNET }})\"\n"
       - id: wait_ready
         name: Wait for FRR to answer on all routers
         type: step
@@ -638,15 +633,15 @@ flows:
           timeout_seconds: 300
           env:
             GITEA_CONTAINER: meridian-gitea
-            GITEA_URL: http://localhost:3000
+            GITEA_URL: '{{ vars.GITEA_URL }}'
             GITEA_ORG: '{{ vars.GITEA_ORG }}'
             ADMIN_USER: '{{ secret(''vault://orgs/default/secrets/meridian/gitea/admin/username'') }}'
             ADMIN_PASSWORD: '{{ secret(''vault://orgs/default/secrets/meridian/gitea/admin/password'') }}'
           command:
-          - "if [ \"{{ inputs.deploy_gitea }}\" != \"True\" ]; then\n  echo \"Gitea deployment skipped (deploy_gitea unchecked).\"\
-            \n  exit 0\nfi\nset -e\ndocker rm -f meridian-gitea 2>/dev/null || true\ndocker run -d --name meridian-gitea \\\
-            \n  -p 3000:3000 \\\n  -e GITEA__security__INSTALL_LOCK=true \\\n  -e GITEA__server__ROOT_URL=\"http://localhost:3000/\"\
-            \ \\\n  gitea/gitea:1.22-rootless\nsh /attachments/seed.sh\n"
+          - "DEPLOY=$(printf '%s' \"{{ inputs.deploy_gitea }}\" | tr 'A-Z' 'a-z')\ncase \"$DEPLOY\" in\n  true|1|yes) ;;\n\
+            \  *)\n    echo \"Gitea deployment skipped (deploy_gitea unchecked).\"\n    exit 0\n    ;;\nesac\nset -e\ndocker\
+            \ rm -f meridian-gitea 2>/dev/null || true\ndocker run -d --name meridian-gitea \\\n  -p 3000:3000 \\\n  -e GITEA__security__INSTALL_LOCK=true\
+            \ \\\n  -e GITEA__server__ROOT_URL=\"http://localhost:3000/\" \\\n  gitea/gitea:1.22-rootless\nsh /attachments/seed.sh\n"
       - id: join
         name: Datacenter ready
         type: join
@@ -694,9 +689,13 @@ flows:
             \ -p \"${WORKDIR}\"\nif [ ! -f \"${TOPOLOGY}\" ]; then\n  cp -ar /attachments/* \"${WORKDIR}/\" 2>/dev/null ||\
             \ true\n  sed \\\n    -e \"s#__HEGEMONY_CLAB_NAME__#${LAB_NAME}#g\" \\\n    -e \"s#__HEGEMONY_CLAB_WORKDIR__#${WORKDIR}#g\"\
             \ \\\n    \"${WORKDIR}/topology.clab.yml\" > \"${TOPOLOGY}\"\nfi\ncontainerlab destroy -t \"${TOPOLOGY}\" --cleanup\
-            \ || true\ndocker network rm meridian-lab-mgmt 2>/dev/null || true\nrm -rf \"${WORKDIR}\" || true\nif [ \"{{ inputs.remove_gitea\
-            \ }}\" = \"True\" ]; then\n  docker rm -f meridian-gitea 2>/dev/null || true\n  echo \"Removed Gitea container.\"\
-            \nfi\necho \"Teardown complete.\"\n"
+            \ || true\n# The workers attached during bootstrap still hold endpoints on\n# the management network; detach them\
+            \ or the network removal is\n# refused and the network (and worker interfaces) linger.\nfor c in $(docker ps -aq\
+            \ --filter network=meridian-lab-mgmt); do\n  docker network disconnect -f meridian-lab-mgmt \"$c\" 2>/dev/null\
+            \ || true\ndone\ndocker network rm meridian-lab-mgmt 2>/dev/null || true\nrm -rf \"${WORKDIR}\" || true\nREMOVE_GITEA=$(printf\
+            \ '%s' \"{{ inputs.remove_gitea }}\" | tr 'A-Z' 'a-z')\ncase \"$REMOVE_GITEA\" in\n  true|1|yes)\n    docker rm\
+            \ -f meridian-gitea 2>/dev/null || true\n    echo \"Removed Gitea container.\"\n    ;;\nesac\necho \"Teardown\
+            \ complete.\"\n"
         policy:
           timeout_sec: 330
           retries: 0
@@ -864,7 +863,8 @@ flows:
         position_x: 640
         position_y: 120
         params:
-          image: alpine:3.20
+          image: alpine/git:v2.45.2
+          entrypoint: /bin/sh
           working_dir: /workspace
           network_mode: host
           timeout_seconds: 180
@@ -872,15 +872,22 @@ flows:
             GIT_USER: '{{ secret(''vault://orgs/default/secrets/meridian/gitea/admin/username'') }}'
             GIT_PASS: '{{ secret(''vault://orgs/default/secrets/meridian/gitea/admin/password'') }}'
           command:
-          - "set -e\napk add --no-cache git >/dev/null\nWORK=$(mktemp -d)\ncd \"$WORK\"\ngit init -q\ngit config user.email\
-            \ \"{{ vars.NOC_CONTACT }}\"\ngit config user.name \"{{ vars.ORG_NAME }} Automation\"\nmkdir -p configs\ncp -ar\
-            \ /artifacts/collect_configs/* configs/ 2>/dev/null || true\nCOUNT=$(find configs -type f | wc -l)\nprintf 'Change:\
-            \ %s\\nDevices: %s\\nGenerated: %s\\n' \\\n  \"{{ inputs.change_id }}\" \"$COUNT\" \"$(date -u +%FT%TZ)\" > MANIFEST.txt\n\
-            git add -A\ngit commit -q -m \"{{ inputs.change_id }}: backup ${COUNT} device config(s)\"\necho \"Committed:\"\
-            ; git log --oneline -1\nif [ \"{{ inputs.dry_run }}\" = \"True\" ]; then\n  echo \"DRY RUN - not pushing. Contents:\"\
-            \n  git show --stat --oneline HEAD | head -50\nelse\n  git remote add origin \\\n    \"http://${GIT_USER}:${GIT_PASS}@localhost:3000/{{\
-            \ vars.GITEA_ORG }}/config-backups.git\"\n  git push -f origin HEAD:main\n  echo \"Pushed to {{ vars.GITEA_URL\
-            \ }}/{{ vars.GITEA_ORG }}/config-backups\"\nfi\n"
+          - "set -e\n# Credentials never appear in the remote URL (they would leak\n# into evidence via git error output);\
+            \ git asks this helper.\nCRED_HELPER='!f() { echo \"username=${GIT_USER}\"; echo \"password=${GIT_PASS}\"; };\
+            \ f'\nDRY=$(printf '%s' \"{{ inputs.dry_run }}\" | tr 'A-Z' 'a-z')\nWORK=$(mktemp -d)\ncd \"$WORK\"\ncase \"$DRY\"\
+            \ in\n  true|1|yes)\n    DRY=true\n    git init -q -b main .\n    ;;\n  *)\n    DRY=false\n    # Clone so each\
+            \ backup appends to the repository history.\n    git -c credential.helper=\"$CRED_HELPER\" clone -q \\\n     \
+            \ \"http://localhost:3000/{{ vars.GITEA_ORG }}/config-backups.git\" .\n    ;;\nesac\ngit config user.email \"\
+            {{ vars.NOC_CONTACT }}\"\ngit config user.name \"{{ vars.ORG_NAME }} Automation\"\nrm -rf configs\nmkdir -p configs\n\
+            cp -ar /artifacts/collect_configs/* configs/ 2>/dev/null || true\nCOUNT=$(find configs -type f | wc -l)\nif [\
+            \ \"$COUNT\" -eq 0 ]; then\n  echo \"ERROR: no device configurations were collected\" >&2\n  exit 1\nfi\n{\n \
+            \ printf 'Change: %s\\nDevices: %s\\nGenerated: %s\\n' \\\n    \"{{ inputs.change_id }}\" \"$COUNT\" \"$(date\
+            \ -u +%FT%TZ)\"\n  printf 'Maintenance window: {{ vars.MAINT_WINDOW }}\\n'\n  printf 'Org standards: ntp={{ vars.NTP_PRIMARY\
+            \ }} dns={{ vars.DNS_PRIMARY }} syslog={{ vars.SYSLOG_PRIMARY }}\\n'\n} > MANIFEST.txt\ngit add -A\ngit commit\
+            \ -q -m \"{{ inputs.change_id }}: backup ${COUNT} device config(s)\"\necho \"Committed:\"; git log --oneline -1\n\
+            if [ \"$DRY\" = \"true\" ]; then\n  echo \"DRY RUN - not pushing. Contents:\"\n  git show --stat --oneline HEAD\
+            \ | head -50\nelse\n  git -c credential.helper=\"$CRED_HELPER\" push -q origin HEAD:main\n  echo \"Pushed to {{\
+            \ vars.GITEA_URL }}/{{ vars.GITEA_ORG }}/config-backups\"\nfi\n"
         policy:
           timeout_sec: 200
           retries: 0
@@ -1014,7 +1021,8 @@ flows:
         position_y: 200
         params:
           title: Approve service prefix announcement
-          message: Advertise {{ inputs.service_address }} on the selected routers for {{ inputs.change_id }}?
+          message: Advertise the requested service prefix on the selected routers? The prefix, OSPF settings and change ID
+            are recorded in this run's inputs. Standard maintenance window applies.
           timeout_seconds: 3600
         policy:
           timeout_sec: 3600
@@ -1034,7 +1042,7 @@ flows:
           role: announce_targets
         params:
           commands:
-          - show running-config interface lo
+          - show running-config
           - show ip route ospf
           - show ip ospf neighbor
         policy:
@@ -1061,7 +1069,6 @@ flows:
           - '{% if inputs.advertise %}router ospf{% endif %}'
           - '{% if inputs.advertise %}network {{ inputs.service_address }}/32 area {{ inputs.ospf_area }}{% endif %}'
           - end
-          - write memory
         policy:
           timeout_sec: 120
           retries: 0
@@ -1080,7 +1087,7 @@ flows:
           role: announce_targets
         params:
           commands:
-          - show running-config interface lo
+          - show running-config
           - show ip route ospf
           - show ip ospf neighbor
         policy:
@@ -1466,12 +1473,15 @@ flow_attachments:
     # SHELL IS vtysh: an SSH session drops straight into FRR's Cisco-IOS-style CLI,\n# so Hegemony's netcli handlers (platform\
     \ ios-xe -> netmiko cisco_ios) drive it\n# exactly like a real switch. clab is a member of the frr/frrvty groups so vtysh\n\
     # can reach the daemon sockets.\n#\n# Built locally by \"Lab: Bootstrap demo datacenter\" and referenced from\n# topology.clab.yml\
-    \ as image \"meridian/frr-lab:latest\".\nFROM quay.io/frrouting/frr:9.1.0\n\n# openssh for the SSH channel; shadow for\
-    \ chpasswd.\nRUN apk add --no-cache openssh openssh-server shadow \\\n    && ssh-keygen -A \\\n    && sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication\
-    \ yes/' /etc/ssh/sshd_config \\\n    && sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config \\\n\
-    \    && adduser -D -s /usr/bin/vtysh clab \\\n    && addgroup clab frr \\\n    && addgroup clab frrvty \\\n    && echo\
-    \ \"clab:demo-lab-password\" | chpasswd\n\nCOPY entrypoint.sh /usr/local/bin/lab-entrypoint.sh\nRUN chmod +x /usr/local/bin/lab-entrypoint.sh\n\
-    \nENTRYPOINT [\"/usr/local/bin/lab-entrypoint.sh\"]\n"
+    \ as image \"meridian/frr-lab:latest\".\nFROM quay.io/frrouting/frr:9.1.0\n\n# The login password is injected at build\
+    \ time from the meridian-lab-ssh vault\n# secret (see the Bootstrap flow's build step), so the secret stays the single\n\
+    # source of truth. The default only covers standalone `docker build` use.\nARG LAB_PASSWORD=demo-lab-password\n\n# openssh\
+    \ for the SSH channel; shadow for chpasswd.\nRUN apk add --no-cache openssh openssh-server shadow \\\n    && ssh-keygen\
+    \ -A \\\n    && sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config \\\n    && sed\
+    \ -i 's/^#\\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config \\\n    && adduser -D -s /usr/bin/vtysh clab\
+    \ \\\n    && addgroup clab frr \\\n    && addgroup clab frrvty \\\n    && echo \"clab:${LAB_PASSWORD}\" | chpasswd\n\n\
+    COPY entrypoint.sh /usr/local/bin/lab-entrypoint.sh\nRUN chmod +x /usr/local/bin/lab-entrypoint.sh\n\nENTRYPOINT [\"/usr/local/bin/lab-entrypoint.sh\"\
+    ]\n"
 - flow: 'Lab: Provision and tear down demo datacenter'
   filename: entrypoint.sh
   content: '#!/bin/sh
@@ -1633,17 +1643,19 @@ flow_attachments:
     \ create the admin account, then create a public org and an\n# auto-initialised config-backups repository. Idempotent\
     \ — safe to re-run.\nset -e\n\nGITEA_CONTAINER=\"${GITEA_CONTAINER:-meridian-gitea}\"\nBASE=\"${GITEA_URL:-http://host.docker.internal:3000}\"\
     \nADMIN_USER=\"${ADMIN_USER:-meridian-admin}\"\nADMIN_PASSWORD=\"${ADMIN_PASSWORD:-demo-gitea-admin-password}\"\nORG=\"\
-    ${GITEA_ORG:-meridian}\"\n\necho \"Waiting for Gitea at ${BASE} ...\"\nfor _ in $(seq 1 60); do\n  if curl -fsS \"${BASE}/api/healthz\"\
-    \ >/dev/null 2>&1; then\n    echo \"Gitea is healthy.\"\n    break\n  fi\n  sleep 2\ndone\n\necho \"Creating admin user\
-    \ ${ADMIN_USER} (idempotent) ...\"\ndocker exec \"${GITEA_CONTAINER}\" gitea admin user create \\\n  --username \"${ADMIN_USER}\"\
-    \ \\\n  --password \"${ADMIN_PASSWORD}\" \\\n  --email \"${ADMIN_USER}@meridian.example\" \\\n  --admin --must-change-password=false\
-    \ \\\n  || echo \"admin user already exists; continuing\"\n\necho \"Creating public org ${ORG} (idempotent) ...\"\ncurl\
-    \ -fsS -u \"${ADMIN_USER}:${ADMIN_PASSWORD}\" -X POST \"${BASE}/api/v1/orgs\" \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d \"{\\\"username\\\":\\\"${ORG}\\\",\\\"visibility\\\":\\\"public\\\"}\" \\\n  || echo \"org already exists;\
-    \ continuing\"\n\necho \"Creating config-backups repository (idempotent) ...\"\ncurl -fsS -u \"${ADMIN_USER}:${ADMIN_PASSWORD}\"\
-    \ -X POST \"${BASE}/api/v1/orgs/${ORG}/repos\" \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\":\"config-backups\"\
-    ,\"private\":false,\"auto_init\":true,\"default_branch\":\"main\"}' \\\n  || echo \"repository already exists; continuing\"\
-    \n\necho \"Gitea seeded: ${BASE}/${ORG}/config-backups\"\n"
+    ${GITEA_ORG:-meridian}\"\n\necho \"Waiting for Gitea at ${BASE} ...\"\nHEALTHY=false\nfor _ in $(seq 1 60); do\n  if curl\
+    \ -fsS \"${BASE}/api/healthz\" >/dev/null 2>&1; then\n    echo \"Gitea is healthy.\"\n    HEALTHY=true\n    break\n  fi\n\
+    \  sleep 2\ndone\nif [ \"${HEALTHY}\" != \"true\" ]; then\n  echo \"ERROR: Gitea did not become healthy within 120s\"\
+    \ >&2\n  exit 1\nfi\n\necho \"Creating admin user ${ADMIN_USER} (idempotent) ...\"\ndocker exec \"${GITEA_CONTAINER}\"\
+    \ gitea admin user create \\\n  --username \"${ADMIN_USER}\" \\\n  --password \"${ADMIN_PASSWORD}\" \\\n  --email \"${ADMIN_USER}@meridian.example\"\
+    \ \\\n  --admin --must-change-password=false \\\n  || echo \"admin user already exists; continuing\"\n\necho \"Creating\
+    \ public org ${ORG} (idempotent) ...\"\ncurl -fsS -u \"${ADMIN_USER}:${ADMIN_PASSWORD}\" -X POST \"${BASE}/api/v1/orgs\"\
+    \ \\\n  -H 'Content-Type: application/json' \\\n  -d \"{\\\"username\\\":\\\"${ORG}\\\",\\\"visibility\\\":\\\"public\\\
+    \"}\" \\\n  || echo \"org already exists; continuing\"\n\necho \"Creating config-backups repository (idempotent) ...\"\
+    \ncurl -fsS -u \"${ADMIN_USER}:${ADMIN_PASSWORD}\" -X POST \"${BASE}/api/v1/orgs/${ORG}/repos\" \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{\"name\":\"config-backups\",\"private\":false,\"auto_init\":true,\"default_branch\":\"\
+    main\"}' \\\n  || echo \"repository already exists; continuing\"\n\necho \"Gitea seeded: ${BASE}/${ORG}/config-backups\"\
+    \n"
 variables:
 - name: ORG_NAME
   value: Meridian Networks
@@ -1653,10 +1665,7 @@ variables:
   description: Network Operations Center contact address for change records.
 - name: MAINT_WINDOW
   value: Sun 02:00-04:00 UTC
-  description: Standard maintenance window quoted by change-oriented flows.
-- name: CHANGE_PREFIX
-  value: CHG
-  description: Prefix for change identifiers; form fields validate against it.
+  description: Standard maintenance window, recorded in backup manifests.
 - name: GITEA_HOST
   value: localhost
   description: Host that publishes the demo Gitea service. The flows that reach Gitea run as host-networked containers, so
@@ -1673,18 +1682,15 @@ variables:
 - name: LAB_MGMT_SUBNET
   value: 172.20.30.0/24
   description: Management subnet containerlab assigns to the FRR lab routers.
-- name: LAB_IMAGE
-  value: meridian/frr-lab:latest
-  description: Locally built FRR + sshd image tag used by the lab topology.
 - name: NTP_PRIMARY
   value: 192.0.2.123
-  description: Primary NTP server pushed into rendered device configuration.
+  description: Primary NTP server; recorded in backup manifests as an org standard.
 - name: DNS_PRIMARY
   value: 192.0.2.53
-  description: Primary DNS resolver pushed into rendered device configuration.
+  description: Primary DNS resolver; recorded in backup manifests as an org standard.
 - name: SYSLOG_PRIMARY
   value: 192.0.2.54
-  description: Primary syslog collector referenced by health and backup flows.
+  description: Primary syslog collector; recorded in backup manifests as an org standard.
 notification_destinations:
 - name: Meridian NOC Email
   type: email

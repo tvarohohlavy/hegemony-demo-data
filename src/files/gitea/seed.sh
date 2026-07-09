@@ -14,13 +14,19 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-demo-gitea-admin-password}"
 ORG="${GITEA_ORG:-meridian}"
 
 echo "Waiting for Gitea at ${BASE} ..."
+HEALTHY=false
 for _ in $(seq 1 60); do
   if curl -fsS "${BASE}/api/healthz" >/dev/null 2>&1; then
     echo "Gitea is healthy."
+    HEALTHY=true
     break
   fi
   sleep 2
 done
+if [ "${HEALTHY}" != "true" ]; then
+  echo "ERROR: Gitea did not become healthy within 120s" >&2
+  exit 1
+fi
 
 echo "Creating admin user ${ADMIN_USER} (idempotent) ..."
 docker exec "${GITEA_CONTAINER}" gitea admin user create \
