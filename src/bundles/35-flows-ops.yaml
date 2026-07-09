@@ -1,0 +1,676 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Day-to-day operational flows that target the lab routers over SSH exactly as
+# they would target real switches: their devices are supplied by the git
+# inventory provider and selected through the launch form's device picker.
+#
+#  * "Backup lab configs to Git" collects running configs and (optionally)
+#    pushes them to the demo Gitea.
+#  * "Announce service prefix" is the flagship form: an approval gate followed
+#    by pre-checks, a CLI change, post-checks and an evidence comparison. Its
+#    launch form exercises every field type and a conditional (visible_when)
+#    field.
+#  * "Lab routing health check" verifies OSPF adjacencies and reachability.
+
+schema_version: 2
+
+flows:
+  - name: "Ops: Backup lab configs to Git"
+    description: >-
+      Collect running configuration from the selected routers and commit it to
+      a Git repository. Dry run (default) commits locally and prints the result;
+      unchecking Dry run pushes to the demo Gitea config-backups repository.
+    definition:
+      graph:
+        nodes:
+          - id: start
+            name: Start
+            type: start
+            position_x: 0
+            position_y: 120
+          - id: collect_configs
+            name: Collect running configs
+            type: step
+            kind: CHECK
+            phase: PREPARE
+            handler: netcli.collect_evidence
+            position_x: 320
+            position_y: 120
+            target_selectors:
+              - type: role
+                role: backup_targets
+            params:
+              commands:
+                - show running-config
+            policy:
+              timeout_sec: 120
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+          - id: package_push
+            name: Package and push to Git
+            type: step
+            kind: EXECUTE
+            phase: IMPLEMENTATION
+            handler: container.run
+            position_x: 640
+            position_y: 120
+            params:
+              image: alpine:3.20
+              working_dir: /workspace
+              network_mode: host
+              timeout_seconds: 180
+              env:
+                GIT_USER: "{{ secret('vault://orgs/default/secrets/meridian/gitea/admin/username') }}"
+                GIT_PASS: "{{ secret('vault://orgs/default/secrets/meridian/gitea/admin/password') }}"
+              command:
+                - |
+                  set -e
+                  apk add --no-cache git >/dev/null
+                  WORK=$(mktemp -d)
+                  cd "$WORK"
+                  git init -q
+                  git config user.email "{{ vars.NOC_CONTACT }}"
+                  git config user.name "{{ vars.ORG_NAME }} Automation"
+                  mkdir -p configs
+                  cp -ar /artifacts/collect_configs/* configs/ 2>/dev/null || true
+                  COUNT=$(find configs -type f | wc -l)
+                  printf 'Change: %s\nDevices: %s\nGenerated: %s\n' \
+                    "{{ inputs.change_id }}" "$COUNT" "$(date -u +%FT%TZ)" > MANIFEST.txt
+                  git add -A
+                  git commit -q -m "{{ inputs.change_id }}: backup ${COUNT} device config(s)"
+                  echo "Committed:"; git log --oneline -1
+                  if [ "{{ inputs.dry_run }}" = "True" ]; then
+                    echo "DRY RUN - not pushing. Contents:"
+                    git show --stat --oneline HEAD | head -50
+                  else
+                    git remote add origin \
+                      "http://${GIT_USER}:${GIT_PASS}@localhost:3000/{{ vars.GITEA_ORG }}/config-backups.git"
+                    git push -f origin HEAD:main
+                    echo "Pushed to {{ vars.GITEA_URL }}/{{ vars.GITEA_ORG }}/config-backups"
+                  fi
+            policy:
+              timeout_sec: 200
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+          - id: done
+            name: Backup complete
+            type: terminal
+            terminal_status: success
+            position_x: 960
+            position_y: 40
+          - id: failed
+            name: Backup failed
+            type: terminal
+            terminal_status: failure
+            position_x: 960
+            position_y: 240
+        edges:
+          - id: e_start_collect
+            source: start:start
+            target: collect_configs
+          - id: e_collect_package
+            source: collect_configs:success
+            target: package_push
+          - id: e_collect_failed
+            source: collect_configs:failure
+            target: failed
+          - id: e_package_done
+            source: package_push:success
+            target: done
+          - id: e_package_failed
+            source: package_push:failure
+            target: failed
+      outputs:
+        git_result:
+          type: string
+          label: Backup result
+          expression: "{{ steps['package_push'].output.stdout }}"
+          description: Output of the packaging/push step (commit line or push confirmation).
+      interface_graph:
+        nodes:
+          - id: sec_targets
+            kind: section
+            position_x: 80
+            position_y: 80
+            width: 480
+            height: 200
+            data:
+              label: Target routers
+              description: Routers whose running configuration will be backed up.
+              runtime_layout: card
+              collapsible: false
+          - id: f_targets
+            kind: field
+            parent_id: sec_targets
+            position_x: 40
+            position_y: 60
+            data:
+              label: Routers
+              field_id: targets
+              field_type: inventory.device
+              required: true
+              description: Devices to back up (pick the lab routers).
+              config:
+                role: backup_targets
+                multiple: true
+                option_source:
+                  kind: inventory.devices
+          - id: sec_details
+            kind: section
+            position_x: 620
+            position_y: 80
+            width: 480
+            height: 240
+            data:
+              label: Backup details
+              runtime_layout: card
+              collapsible: false
+          - id: f_change_id
+            kind: field
+            parent_id: sec_details
+            position_x: 40
+            position_y: 60
+            data:
+              label: Change reference
+              field_id: change_id
+              field_type: core.text
+              required: true
+              default_value: CHG-1001
+              description: Change record ID; used in the commit message.
+              config:
+                validations:
+                  combinator: AND
+                  children:
+                    - id: v_change_id
+                      op: regex
+                      operand:
+                        kind: value
+                        value: "^CHG-[0-9]+$"
+          - id: f_dry_run
+            kind: field
+            parent_id: sec_details
+            position_x: 40
+            position_y: 140
+            data:
+              label: Dry run
+              field_id: dry_run
+              field_type: core.bool
+              required: false
+              default_value: true
+              description: Commit locally without pushing. Uncheck to push to Gitea.
+              config: {}
+        edges: []
+
+  - name: "Ops: Announce service prefix"
+    description: >-
+      Advertise a service loopback prefix on the selected routers after
+      approval. Collects pre-change evidence, applies the CLI change, collects
+      post-change evidence and compares the two. The launch form demonstrates
+      number/text/bool/enum fields, cross-field templated defaults, input
+      validation, and a conditional (visible_when) field.
+    definition:
+      graph:
+        nodes:
+          - id: start
+            name: Start
+            type: start
+            position_x: 0
+            position_y: 200
+          - id: approval
+            name: Approve announcement
+            type: approval
+            phase: IMPLEMENTATION
+            position_x: 300
+            position_y: 200
+            params:
+              title: Approve service prefix announcement
+              message: "Advertise {{ inputs.service_address }} on the selected routers for {{ inputs.change_id }}?"
+              timeout_seconds: 3600
+            policy:
+              timeout_sec: 3600
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+          - id: precheck
+            name: Pre-change evidence
+            type: step
+            kind: CHECK
+            phase: PREPARE
+            handler: netcli.collect_evidence
+            position_x: 600
+            position_y: 120
+            target_selectors:
+              - type: role
+                role: announce_targets
+            params:
+              commands:
+                - show running-config interface lo
+                - show ip route ospf
+                - show ip ospf neighbor
+            policy:
+              timeout_sec: 120
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+          - id: apply
+            name: Apply prefix configuration
+            type: step
+            kind: ACTION
+            phase: IMPLEMENTATION
+            handler: netcli.execute
+            position_x: 900
+            position_y: 120
+            target_selectors:
+              - type: role
+                role: announce_targets
+            params:
+              commands:
+                - configure terminal
+                - interface lo
+                - ip address {{ inputs.service_address }}/32
+                - "{% if inputs.advertise %}router ospf{% endif %}"
+                - "{% if inputs.advertise %}network {{ inputs.service_address }}/32 area {{ inputs.ospf_area }}{% endif %}"
+                - end
+                - write memory
+            policy:
+              timeout_sec: 120
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+          - id: postcheck
+            name: Post-change evidence
+            type: step
+            kind: CHECK
+            phase: VERIFY
+            handler: netcli.collect_evidence
+            position_x: 1200
+            position_y: 120
+            target_selectors:
+              - type: role
+                role: announce_targets
+            params:
+              commands:
+                - show running-config interface lo
+                - show ip route ospf
+                - show ip ospf neighbor
+            policy:
+              timeout_sec: 120
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+          - id: compare
+            name: Compare pre/post evidence
+            type: step
+            kind: CHECK
+            phase: VERIFY
+            handler: evidence.compare
+            position_x: 1500
+            position_y: 120
+            params:
+              precheck_step_id: precheck
+              postcheck_step_id: postcheck
+            policy:
+              timeout_sec: 60
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+          - id: done
+            name: Announcement complete
+            type: terminal
+            terminal_status: success
+            position_x: 1800
+            position_y: 40
+          - id: failed
+            name: Announcement failed
+            type: terminal
+            terminal_status: failure
+            position_x: 1800
+            position_y: 360
+        edges:
+          - id: e_start_approval
+            source: start:start
+            target: approval
+          - id: e_approval_precheck
+            source: approval:approved
+            target: precheck
+          - id: e_approval_rejected
+            source: approval:rejected
+            target: failed
+          - id: e_approval_expired
+            source: approval:expired
+            target: failed
+          - id: e_precheck_apply
+            source: precheck:success
+            target: apply
+          - id: e_precheck_failed
+            source: precheck:failure
+            target: failed
+          - id: e_apply_postcheck
+            source: apply:success
+            target: postcheck
+          - id: e_apply_failed
+            source: apply:failure
+            target: failed
+          - id: e_postcheck_compare
+            source: postcheck:success
+            target: compare
+          - id: e_postcheck_failed
+            source: postcheck:failure
+            target: failed
+          - id: e_compare_done
+            source: compare:success
+            target: done
+          - id: e_compare_failed
+            source: compare:failure
+            target: failed
+      interface_graph:
+        nodes:
+          - id: sec_targets
+            kind: section
+            position_x: 80
+            position_y: 60
+            width: 480
+            height: 180
+            data:
+              label: Target routers
+              runtime_layout: card
+              collapsible: false
+          - id: f_targets
+            kind: field
+            parent_id: sec_targets
+            position_x: 40
+            position_y: 60
+            data:
+              label: Routers
+              field_id: targets
+              field_type: inventory.device
+              required: true
+              description: Routers to advertise the service prefix on.
+              config:
+                role: announce_targets
+                multiple: true
+                option_source:
+                  kind: inventory.devices
+          - id: sec_prefix
+            kind: section
+            position_x: 620
+            position_y: 60
+            width: 520
+            height: 220
+            data:
+              label: Service prefix
+              runtime_layout: card
+              collapsible: false
+          - id: f_loopback_id
+            kind: field
+            parent_id: sec_prefix
+            position_x: 40
+            position_y: 60
+            data:
+              label: Loopback ID
+              field_id: loopback_id
+              field_type: core.number
+              required: true
+              default_value: 150
+              description: Service loopback index (101-199).
+              config:
+                subtype: int
+                validations:
+                  combinator: AND
+                  children:
+                    - id: v_lo_gt
+                      op: gt
+                      operand:
+                        kind: value
+                        value: 100
+                    - id: v_lo_lt
+                      op: lt
+                      operand:
+                        kind: value
+                        value: 200
+          - id: f_service_address
+            kind: field
+            parent_id: sec_prefix
+            position_x: 300
+            position_y: 60
+            data:
+              label: Service address
+              field_id: service_address
+              field_type: core.text
+              required: true
+              default_value: "10.200.{{ inputs.loopback_id }}.1"
+              description: Host address advertised as a /32 (defaults from the loopback ID).
+              config:
+                validations:
+                  combinator: AND
+                  children:
+                    - id: v_addr
+                      op: regex
+                      operand:
+                        kind: value
+                        value: "^10\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}$"
+          - id: sec_advertise
+            kind: section
+            position_x: 620
+            position_y: 320
+            width: 520
+            height: 200
+            data:
+              label: Advertisement
+              runtime_layout: fieldset
+              collapsible: false
+          - id: f_advertise
+            kind: field
+            parent_id: sec_advertise
+            position_x: 40
+            position_y: 60
+            data:
+              label: Advertise into OSPF
+              field_id: advertise
+              field_type: core.bool
+              required: false
+              default_value: true
+              description: Redistribute the service prefix into OSPF.
+              config: {}
+          - id: f_ospf_area
+            kind: field
+            parent_id: sec_advertise
+            position_x: 300
+            position_y: 60
+            data:
+              label: OSPF area
+              field_id: ospf_area
+              field_type: core.text
+              required: false
+              default_value: "0"
+              description: OSPF area to advertise into (shown only when advertising).
+              config:
+                validations:
+                  combinator: AND
+                  children:
+                    - id: v_area
+                      op: regex
+                      operand:
+                        kind: value
+                        value: "^[0-9.]+$"
+          - id: sec_change
+            kind: section
+            position_x: 1200
+            position_y: 60
+            width: 480
+            height: 180
+            data:
+              label: Change record
+              runtime_layout: card
+              collapsible: false
+          - id: f_change_id
+            kind: field
+            parent_id: sec_change
+            position_x: 40
+            position_y: 60
+            data:
+              label: Change reference
+              field_id: change_id
+              field_type: core.text
+              required: true
+              default_value: CHG-1002
+              description: Change record ID quoted in the approval prompt.
+              config:
+                validations:
+                  combinator: AND
+                  children:
+                    - id: v_change_id
+                      op: regex
+                      operand:
+                        kind: value
+                        value: "^CHG-[0-9]+$"
+        edges:
+          - id: e_advertise_area
+            source: f_advertise
+            target: f_ospf_area
+            relations:
+              - semantic_type: visible_when
+                operator: truthy
+                value: null
+
+  - name: "Net: Lab routing health check"
+    description: >-
+      Verify the selected routers are reachable and their OSPF adjacencies are
+      Full. Runs a TCP reachability probe, collects OSPF state, and asserts on
+      the neighbor output.
+    definition:
+      graph:
+        nodes:
+          - id: start
+            name: Start
+            type: start
+            position_x: 0
+            position_y: 120
+          - id: reachable
+            name: Reachability probe (TCP/22)
+            type: step
+            kind: CHECK
+            phase: PREPARE
+            handler: probe.connectivity
+            position_x: 300
+            position_y: 120
+            target_selectors:
+              - type: role
+                role: health_targets
+            params:
+              check_type: tcp_connect
+              port: 22
+              timeout_sec: 10
+              attempts: 2
+            policy:
+              timeout_sec: 60
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+          - id: neighbors
+            name: Collect OSPF state
+            type: step
+            kind: CHECK
+            phase: VERIFY
+            handler: netcli.collect_evidence
+            position_x: 600
+            position_y: 120
+            target_selectors:
+              - type: role
+                role: health_targets
+            params:
+              commands:
+                - show ip ospf neighbor
+                - show ip route ospf
+            policy:
+              timeout_sec: 120
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+          - id: assert_full
+            name: Assert OSPF neighbors Full
+            type: step
+            kind: CHECK
+            phase: VERIFY
+            handler: evidence.assert
+            position_x: 900
+            position_y: 120
+            params:
+              artifact_step_id: neighbors
+              target_role: health_targets
+              command: show ip ospf neighbor
+              operator: contains
+              expected: Full
+              message: OSPF neighbors are not Full on at least one router.
+            policy:
+              timeout_sec: 60
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+          - id: done
+            name: Healthy
+            type: terminal
+            terminal_status: success
+            position_x: 1200
+            position_y: 40
+          - id: failed
+            name: Unhealthy
+            type: terminal
+            terminal_status: failure
+            position_x: 1200
+            position_y: 240
+        edges:
+          - id: e_start_reachable
+            source: start:start
+            target: reachable
+          - id: e_reachable_neighbors
+            source: reachable:success
+            target: neighbors
+          - id: e_reachable_failed
+            source: reachable:failure
+            target: failed
+          - id: e_neighbors_assert
+            source: neighbors:success
+            target: assert_full
+          - id: e_neighbors_failed
+            source: neighbors:failure
+            target: failed
+          - id: e_assert_done
+            source: assert_full:success
+            target: done
+          - id: e_assert_failed
+            source: assert_full:failure
+            target: failed
+      interface_graph:
+        nodes:
+          - id: sec_targets
+            kind: section
+            position_x: 80
+            position_y: 80
+            width: 480
+            height: 180
+            data:
+              label: Target routers
+              runtime_layout: card
+              collapsible: false
+          - id: f_targets
+            kind: field
+            parent_id: sec_targets
+            position_x: 40
+            position_y: 60
+            data:
+              label: Routers
+              field_id: targets
+              field_type: inventory.device
+              required: true
+              description: Routers to health-check.
+              config:
+                role: health_targets
+                multiple: true
+                option_source:
+                  kind: inventory.devices
+        edges: []

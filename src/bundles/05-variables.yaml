@@ -1,0 +1,59 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Global variables model the standing facts of the fictional operator
+# "Meridian Networks": organisation identity, the change process, and the
+# addresses of shared infrastructure. Flows, container env, and rendered
+# device config all read these through {{ vars.NAME }} so a single edit
+# re-labels the whole demo.
+
+schema_version: 2
+
+variables:
+  # --- Organisation identity -------------------------------------------------
+  - name: ORG_NAME
+    value: Meridian Networks
+    description: Fictional operator name surfaced in flow output and notifications.
+  - name: NOC_CONTACT
+    value: noc@meridian.example
+    description: Network Operations Center contact address for change records.
+  - name: MAINT_WINDOW
+    value: "Sun 02:00-04:00 UTC"
+    description: Standard maintenance window quoted by change-oriented flows.
+  - name: CHANGE_PREFIX
+    value: CHG
+    description: Prefix for change identifiers; form fields validate against it.
+
+  # --- Demo datacenter (Gitea + containerlab), bootstrapped by a flow --------
+  - name: GITEA_HOST
+    value: localhost
+    description: >-
+      Host that publishes the demo Gitea service. The flows that reach Gitea run
+      as host-networked containers, so localhost:3000 addresses it directly.
+  - name: GITEA_PORT
+    value: "3000"
+    description: Published port of the demo Gitea service.
+  - name: GITEA_ORG
+    value: meridian
+    description: Gitea organisation that owns the source-of-truth and backup repos.
+  - name: GITEA_URL
+    value: "http://{{ vars.GITEA_HOST }}:{{ vars.GITEA_PORT }}"
+    description: Base URL of the demo Gitea service (composed from GITEA_HOST/PORT).
+  - name: LAB_MGMT_SUBNET
+    value: 172.20.30.0/24
+    description: Management subnet containerlab assigns to the FRR lab routers.
+  - name: LAB_IMAGE
+    value: meridian/frr-lab:latest
+    description: Locally built FRR + sshd image tag used by the lab topology.
+
+  # --- Shared network services referenced by rendered config -----------------
+  - name: NTP_PRIMARY
+    value: 192.0.2.123
+    description: Primary NTP server pushed into rendered device configuration.
+  - name: DNS_PRIMARY
+    value: 192.0.2.53
+    description: Primary DNS resolver pushed into rendered device configuration.
+  - name: SYSLOG_PRIMARY
+    value: 192.0.2.54
+    description: Primary syslog collector referenced by health and backup flows.

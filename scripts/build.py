@@ -138,7 +138,39 @@ def merge_fragments(config: BundleConfig) -> dict[str, Any]:
             merged[key] = sections.pop(key)
     for key in sorted(sections):
         merged[key] = sections[key]
+    _resolve_content_files(merged)
     return merged
+
+
+def _resolve_content_files(merged: dict[str, Any]) -> None:
+    """Inline ``flow_attachments[*].content_file`` into ``content`` at build time.
+
+    Large attachment payloads (Dockerfiles, containerlab topologies, shell
+    scripts) live as real, editable files under the repository instead of giant
+    YAML literals. Each such attachment sets ``content_file: <repo-relative
+    path>`` in place of ``content``; this reads the file and replaces the key so
+    the generated bundle carries only the plain ``content`` field the importer
+    expects.
+    """
+    attachments = merged.get("flow_attachments")
+    if not isinstance(attachments, list):
+        return
+    for index, item in enumerate(attachments):
+        if not isinstance(item, dict) or "content_file" not in item:
+            continue
+        ref = item.pop("content_file")
+        if "content" in item:
+            raise ValueError(
+                f"flow_attachments[{index}] sets both content and content_file"
+            )
+        if not isinstance(ref, str) or not ref.strip():
+            raise ValueError(
+                f"flow_attachments[{index}] content_file must be a non-empty path"
+            )
+        path = _repo_path(ref, field_name=f"flow_attachments[{index}] content_file")
+        if not path.is_file():
+            raise FileNotFoundError(f"flow_attachments[{index}] content_file not found: {ref}")
+        item["content"] = path.read_text(encoding="utf-8")
 
 
 def render_bundle(bundle: dict[str, Any], config: BundleConfig) -> str:

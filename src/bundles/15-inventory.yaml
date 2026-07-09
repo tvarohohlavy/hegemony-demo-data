@@ -1,0 +1,446 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Meridian Networks' production estate: a regional site hierarchy with hub
+# datacenters and campuses. All management addresses are RFC 5737 TEST-NET-1
+# (192.0.2.0/24) and never route anywhere — this inventory is a browsing and
+# targeting showcase, not a set of reachable devices. The reachable devices
+# live in the "Virtual Lab" site and are synced from Git by the inventory
+# provider (see 25-inventory-providers.yaml), not declared here.
+#
+# Access configuration deliberately mixes two credential styles:
+#   * out-of-band / global devices resolve SSH from environment variables,
+#   * every hub device resolves SSH (and enable) from the vault-backed
+#     meridian-prod-ssh secret, to showcase vault:// access references.
+
+schema_version: 2
+
+sites:
+  - name: Meridian Global
+    description: Root of the Meridian Networks site hierarchy.
+    location: global
+    tags:
+      env: demo
+      tier: global
+      site_type: root
+  - name: Americas
+    description: Americas regional aggregation.
+    location: americas
+    parent: Meridian Global
+    tags:
+      env: demo
+      region: americas
+      site_type: region
+  - name: EMEA
+    description: EMEA regional aggregation.
+    location: emea
+    parent: Meridian Global
+    tags:
+      env: demo
+      region: emea
+      site_type: region
+  - name: APAC
+    description: APAC regional aggregation.
+    location: apac
+    parent: Meridian Global
+    tags:
+      env: demo
+      region: apac
+      site_type: region
+  - name: NYC1
+    description: New York hub datacenter.
+    location: new-york
+    parent: Meridian Global/Americas
+    tags:
+      env: demo
+      region: americas
+      hub: nyc1
+      site_type: datacenter
+  - name: SJC1
+    description: San Jose campus.
+    location: san-jose
+    parent: Meridian Global/Americas
+    tags:
+      env: demo
+      region: americas
+      hub: sjc1
+      site_type: campus
+  - name: PRG1
+    description: Prague headquarters datacenter.
+    location: prague
+    parent: Meridian Global/EMEA
+    tags:
+      env: demo
+      region: emea
+      hub: prg1
+      site_type: datacenter
+  - name: AMS1
+    description: Amsterdam hub datacenter.
+    location: amsterdam
+    parent: Meridian Global/EMEA
+    tags:
+      env: demo
+      region: emea
+      hub: ams1
+      site_type: datacenter
+  - name: LON1
+    description: London campus.
+    location: london
+    parent: Meridian Global/EMEA
+    tags:
+      env: demo
+      region: emea
+      hub: lon1
+      site_type: campus
+  - name: SIN1
+    description: Singapore hub datacenter.
+    location: singapore
+    parent: Meridian Global/APAC
+    tags:
+      env: demo
+      region: apac
+      hub: sin1
+      site_type: datacenter
+  - name: SYD1
+    description: Sydney campus.
+    location: sydney
+    parent: Meridian Global/APAC
+    tags:
+      env: demo
+      region: apac
+      hub: syd1
+      site_type: campus
+  # The "Virtual Lab" site and its four routers are intentionally NOT declared
+  # here — they are owned and created by the git inventory provider from the
+  # seeded source-of-truth repository (see 25-inventory-providers.yaml and the
+  # demo-inventory/ tree). Run "Lab: Bootstrap demo datacenter" to populate them.
+
+devices:
+  # --- Out-of-band management (environment-variable credentials) -------------
+  - name: mer-oob-01
+    mgmt_host: 192.0.2.10
+    vendor: Cisco
+    platform: ios-xe
+    model: C8300-1N1S-4T2X
+    current_version: 17.12.4
+    site: Meridian Global
+    access_config:
+      ssh:
+        username_ref: "{{ env('HEGEMONY_SSH_USERNAME') }}"
+        password_ref: "{{ env('HEGEMONY_SSH_PASSWORD') }}"
+    tags:
+      role: oob
+      env: demo
+      region: global
+  - name: mer-oob-02
+    mgmt_host: 192.0.2.11
+    vendor: Cisco
+    platform: ios-xe
+    model: C8300-1N1S-4T2X
+    current_version: 17.12.4
+    site: Meridian Global
+    access_config:
+      ssh:
+        username_ref: "{{ env('HEGEMONY_SSH_USERNAME') }}"
+        password_ref: "{{ env('HEGEMONY_SSH_PASSWORD') }}"
+    tags:
+      role: oob
+      env: demo
+      region: global
+
+  # --- NYC1 (Americas) -------------------------------------------------------
+  - name: nyc1-core-01
+    mgmt_host: 192.0.2.20
+    vendor: Cisco
+    platform: ios-xe
+    model: Catalyst 9500
+    current_version: 17.09.5
+    site: Meridian Global/Americas/NYC1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+      enable:
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/enable_password') }}"
+    tags:
+      role: core
+      env: demo
+      region: americas
+      hub: nyc1
+  - name: nyc1-core-02
+    mgmt_host: 192.0.2.21
+    vendor: Cisco
+    platform: ios-xe
+    model: Catalyst 9500
+    current_version: 17.09.5
+    site: Meridian Global/Americas/NYC1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+      enable:
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/enable_password') }}"
+    tags:
+      role: core
+      env: demo
+      region: americas
+      hub: nyc1
+  - name: nyc1-edge-01
+    mgmt_host: 192.0.2.22
+    vendor: Cisco
+    platform: ios-xr
+    model: ASR 9902
+    current_version: 7.11.2
+    site: Meridian Global/Americas/NYC1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+    tags:
+      role: edge
+      env: demo
+      region: americas
+      hub: nyc1
+
+  # --- SJC1 (Americas) -------------------------------------------------------
+  - name: sjc1-core-01
+    mgmt_host: 192.0.2.30
+    vendor: Arista
+    platform: eos
+    model: 7280R3
+    current_version: 4.31.2F
+    site: Meridian Global/Americas/SJC1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+    tags:
+      role: core
+      env: demo
+      region: americas
+      hub: sjc1
+  - name: sjc1-edge-01
+    mgmt_host: 192.0.2.31
+    vendor: Cisco
+    platform: ios-xe
+    model: ISR 4451-X
+    current_version: 17.06.6
+    site: Meridian Global/Americas/SJC1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+    tags:
+      role: edge
+      env: demo
+      region: americas
+      hub: sjc1
+
+  # --- PRG1 (EMEA, headquarters) ---------------------------------------------
+  - name: prg1-core-01
+    mgmt_host: 192.0.2.40
+    vendor: Cisco
+    platform: ios-xe
+    model: Catalyst 9600
+    current_version: 17.09.5
+    site: Meridian Global/EMEA/PRG1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+      enable:
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/enable_password') }}"
+    tags:
+      role: core
+      env: demo
+      region: emea
+      hub: prg1
+  - name: prg1-core-02
+    mgmt_host: 192.0.2.41
+    vendor: Cisco
+    platform: ios-xe
+    model: Catalyst 9600
+    current_version: 17.09.5
+    site: Meridian Global/EMEA/PRG1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+      enable:
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/enable_password') }}"
+    tags:
+      role: core
+      env: demo
+      region: emea
+      hub: prg1
+  - name: prg1-edge-01
+    mgmt_host: 192.0.2.42
+    vendor: Juniper
+    platform: junos
+    model: MX204
+    current_version: "22.4R3"
+    site: Meridian Global/EMEA/PRG1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+    tags:
+      role: edge
+      env: demo
+      region: emea
+      hub: prg1
+  - name: prg1-acc-01
+    mgmt_host: 192.0.2.43
+    vendor: Cisco
+    platform: ios-xe
+    model: Catalyst 9300
+    current_version: 17.09.5
+    site: Meridian Global/EMEA/PRG1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+    tags:
+      role: access
+      env: demo
+      region: emea
+      hub: prg1
+
+  # --- AMS1 (EMEA) -----------------------------------------------------------
+  - name: ams1-core-01
+    mgmt_host: 192.0.2.50
+    vendor: Arista
+    platform: eos
+    model: 7050X3
+    current_version: 4.31.2F
+    site: Meridian Global/EMEA/AMS1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+    tags:
+      role: core
+      env: demo
+      region: emea
+      hub: ams1
+  - name: ams1-edge-01
+    mgmt_host: 192.0.2.51
+    vendor: Cisco
+    platform: ios-xr
+    model: ASR 9902
+    current_version: 7.11.2
+    site: Meridian Global/EMEA/AMS1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+    tags:
+      role: edge
+      env: demo
+      region: emea
+      hub: ams1
+
+  # --- LON1 (EMEA) -----------------------------------------------------------
+  - name: lon1-edge-01
+    mgmt_host: 192.0.2.60
+    vendor: Cisco
+    platform: ios-xe
+    model: ISR 4431
+    current_version: 17.06.6
+    site: Meridian Global/EMEA/LON1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+    tags:
+      role: edge
+      env: demo
+      region: emea
+      hub: lon1
+  - name: lon1-acc-01
+    mgmt_host: 192.0.2.61
+    vendor: Cisco
+    platform: ios-xe
+    model: Catalyst 9300
+    current_version: 17.09.5
+    site: Meridian Global/EMEA/LON1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+    tags:
+      role: access
+      env: demo
+      region: emea
+      hub: lon1
+
+  # --- SIN1 (APAC) -----------------------------------------------------------
+  - name: sin1-core-01
+    mgmt_host: 192.0.2.70
+    vendor: Cisco
+    platform: ios-xe
+    model: Catalyst 9500
+    current_version: 17.09.5
+    site: Meridian Global/APAC/SIN1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+      enable:
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/enable_password') }}"
+    tags:
+      role: core
+      env: demo
+      region: apac
+      hub: sin1
+  - name: sin1-edge-01
+    mgmt_host: 192.0.2.71
+    vendor: Cisco
+    platform: ios-xr
+    model: NCS 540
+    current_version: 7.11.2
+    site: Meridian Global/APAC/SIN1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+    tags:
+      role: edge
+      env: demo
+      region: apac
+      hub: sin1
+
+  # --- SYD1 (APAC) -----------------------------------------------------------
+  - name: syd1-edge-01
+    mgmt_host: 192.0.2.80
+    vendor: Cisco
+    platform: ios-xe
+    model: ISR 4431
+    current_version: 17.06.6
+    site: Meridian Global/APAC/SYD1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+    tags:
+      role: edge
+      env: demo
+      region: apac
+      hub: syd1
+  - name: syd1-acc-01
+    mgmt_host: 192.0.2.81
+    vendor: Arista
+    platform: eos
+    model: 720XP
+    current_version: 4.31.2F
+    site: Meridian Global/APAC/SYD1
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/default/secrets/meridian/prod/ssh/password') }}"
+    tags:
+      role: access
+      env: demo
+      region: apac
+      hub: syd1

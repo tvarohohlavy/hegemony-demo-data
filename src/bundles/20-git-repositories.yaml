@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Git repositories Hegemony connects to directly.
+#
+# Hegemony clones repositories over HTTPS and refuses URLs that resolve to
+# private/internal addresses (SSRF protection). The demo therefore uses a
+# single public repository as its Git-backed inventory source: THIS repo,
+# whose demo-inventory/ tree is read by the "lab-inventory" git provider
+# (see 25-inventory-providers.yaml).
+#
+# The config-backup workflow pushes to a local Gitea instead, but it does so
+# from inside its own container (raw git push), not through a Hegemony git
+# repository — internal hosts are intentionally unreachable from the platform's
+# git machinery.
+
+schema_version: 2
+
+git_repositories:
+  - name: hegemony-demo-data
+    url: https://github.com/tvarohohlavy/hegemony-demo-data.git
+    branch: main
+    sync_stale_seconds: 300

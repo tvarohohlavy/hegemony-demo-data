@@ -14,3 +14,11 @@ path = "uv.lock"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2025-2026 Jakub Travnik <jakub.travnik@gmail.com>"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# FRR reads these files verbatim as /etc/frr/*.conf; keep them free of SPDX
+# comment headers and annotate them here instead.
+[[annotations]]
+path = ["src/files/lab/frr/*.conf", "src/files/lab/frr/vtysh.conf"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025-2026 Jakub Travnik <jakub.travnik@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

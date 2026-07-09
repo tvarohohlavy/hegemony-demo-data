@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+schema_version: 1
+kind: device
+external_id: lab-r4
+name: lab-r4
+mgmt_host: 172.20.30.14
+mgmt_port: 22
+platform: ios-xe
+vendor: FRRouting
+model: frr-lab
+site: virtual-lab
+role: lab-router
+tags:
+  - lab
+  - frr
+custom_fields:
+  ospf_router_id: 10.255.255.4

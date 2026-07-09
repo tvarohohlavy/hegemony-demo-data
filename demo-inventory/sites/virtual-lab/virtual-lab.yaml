@@ -1,0 +1,16 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Git inventory source of truth for Meridian's virtual lab. This tree is
+# seeded into the demo Gitea by "Lab: Bootstrap demo datacenter" and read by
+# the "lab-inventory" git provider. Site paths are derived from directory
+# layout (this file -> site path "virtual-lab"); device files live under
+# devices/ and reference sites by that derived path.
+schema_version: 1
+kind: site
+external_id: virtual-lab
+name: Virtual Lab
+location: Containerlab (FRR full mesh)
+tags:
+  env: demo
+  site_type: lab

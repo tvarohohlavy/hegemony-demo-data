@@ -1,0 +1,53 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Schedules are always imported DISABLED for safety. Each carries the flow
+# inputs it would run with; because a bundle cannot know the target device
+# UUIDs, the operator selects target routers when enabling a schedule.
+
+schema_version: 2
+
+schedules:
+  - name: Nightly config backup (demo)
+    flow: "Ops: Backup lab configs to Git"
+    schedule_type: recurring
+    cron_expression: "0 2 * * *"
+    timezone: UTC
+    params:
+      change_id: CHG-NIGHTLY
+      dry_run: true
+    enabled: true
+  - name: Weekly routing health check (demo)
+    flow: "Net: Lab routing health check"
+    schedule_type: recurring
+    cron_expression: "0 6 * * 1"
+    timezone: UTC
+    params: {}
+    enabled: true
+  - name: Hourly reachability sweep (demo)
+    flow: "Net: Lab routing health check"
+    schedule_type: recurring
+    interval_seconds: 3600
+    timezone: UTC
+    params: {}
+    enabled: true
+  - name: Monthly announcement rehearsal (demo)
+    flow: "Ops: Announce service prefix"
+    schedule_type: recurring
+    cron_expression: "0 9 1 * *"
+    timezone: UTC
+    params:
+      loopback_id: 150
+      service_address: "10.200.150.1"
+      advertise: true
+      ospf_area: "0"
+      change_id: CHG-REHEARSAL
+    enabled: false
+  - name: Planned maintenance rehearsal (demo)
+    flow: "Net: Lab routing health check"
+    schedule_type: one_time
+    run_at: "2029-05-16T02:00:00+00:00"
+    timezone: UTC
+    params: {}
+    enabled: true

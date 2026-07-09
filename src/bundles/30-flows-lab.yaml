@@ -1,0 +1,435 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# A single long-running lifecycle flow for the self-contained demo datacenter.
+# It builds an FRR+sshd image, deploys a four-router containerlab full mesh with
+# fixed management addresses, attaches the lab management network to the
+# Hegemony workers (so the seeded inventory becomes reachable), and optionally
+# stands up a local Gitea for config backups. It then PARKS on an approval gate
+# WITH NO EXPIRY: the run stays paused — the lab keeps running on the host —
+# while you SSH to the routers and exercise the other flows against them.
+# Approving the gate tears the lab down; rejecting leaves it running. This is
+# the only flow that touches the host Docker daemon, and a good example of a
+# run that stays open for hours or days.
+
+schema_version: 2
+
+flows:
+  - name: "Lab: Provision and tear down demo datacenter"
+    description: >-
+      Build the FRR lab image, deploy the 4-router containerlab full mesh,
+      attach the lab network to the workers, and optionally stand up Gitea; then
+      hold at an approval gate (no expiry) so you can interact with the lab.
+      Approve to tear it down, reject to leave it running.
+    definition:
+      graph:
+        nodes:
+          - id: start
+            name: Start
+            type: start
+            position_x: 0
+            position_y: 200
+          - id: build_image
+            name: Build FRR lab image
+            type: step
+            kind: EXECUTE
+            phase: PREPARE
+            handler: container.run
+            position_x: 320
+            position_y: 200
+            mounted_files:
+              - Dockerfile
+              - entrypoint.sh
+            params:
+              image: ghcr.io/srl-labs/clab:0.77.0
+              working_dir: /tmp/meridian-lab
+              attach_docker_socket: true
+              network_mode: host
+              timeout_seconds: 600
+              command:
+                - |
+                  set -e
+                  WORKDIR=/tmp/meridian-lab
+                  mkdir -p "${WORKDIR}"
+                  cp -ar /attachments/* "${WORKDIR}/"
+                  echo "Building meridian/frr-lab:latest ..."
+                  docker build -t meridian/frr-lab:latest "${WORKDIR}"
+            policy:
+              timeout_sec: 660
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+          - id: fork
+            name: Deploy lab and Gitea
+            type: fork
+            position_x: 620
+            position_y: 200
+          - id: deploy_lab
+            name: Deploy containerlab full mesh
+            type: step
+            kind: EXECUTE
+            phase: IMPLEMENTATION
+            handler: container.run
+            position_x: 920
+            position_y: 40
+            mounted_files:
+              - topology.clab.yml
+              - frr/
+            params:
+              image: ghcr.io/srl-labs/clab:0.77.0
+              working_dir: /tmp/meridian-lab
+              attach_docker_socket: true
+              network_mode: host
+              privileged: true
+              pid_mode: host
+              extra_mounts:
+                - "/var/run/netns:/var/run/netns:shared"
+                - "/var/lib/docker:/var/lib/docker"
+                - "/tmp/meridian-lab:/tmp/meridian-lab"
+              timeout_seconds: 600
+              command:
+                - |
+                  set -e
+                  LAB_NAME=meridian-lab
+                  WORKDIR=/tmp/meridian-lab
+                  TOPOLOGY="${WORKDIR}/topology.run.clab.yml"
+                  mkdir -p "${WORKDIR}"
+                  cp -ar /attachments/* "${WORKDIR}/"
+                  sed \
+                    -e "s#__HEGEMONY_CLAB_NAME__#${LAB_NAME}#g" \
+                    -e "s#__HEGEMONY_CLAB_WORKDIR__#${WORKDIR}#g" \
+                    "${WORKDIR}/topology.clab.yml" > "${TOPOLOGY}"
+                  containerlab deploy -t "${TOPOLOGY}"
+            policy:
+              timeout_sec: 660
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+          - id: connect_workers
+            name: Attach lab network to workers
+            type: step
+            kind: ACTION
+            phase: IMPLEMENTATION
+            handler: container.run
+            position_x: 1220
+            position_y: 40
+            params:
+              image: ghcr.io/srl-labs/clab:0.77.0
+              working_dir: /workspace
+              attach_docker_socket: true
+              network_mode: host
+              timeout_seconds: 120
+              command:
+                - |
+                  set -e
+                  # Give the Hegemony workers an interface on the lab management
+                  # network so netcli can SSH to 172.20.30.0/24. -q filters avoid
+                  # docker --format templates colliding with Jinja braces.
+                  COUNT=0
+                  for c in $(docker ps -q --filter name=worker); do
+                    docker network connect meridian-lab-mgmt "$c" 2>/dev/null || true
+                    COUNT=$((COUNT + 1))
+                  done
+                  echo "Attached ${COUNT} worker container(s) to meridian-lab-mgmt"
+          - id: wait_ready
+            name: Wait for FRR to answer on all routers
+            type: step
+            kind: CHECK
+            phase: VERIFY
+            handler: container.run
+            position_x: 1520
+            position_y: 40
+            params:
+              image: ghcr.io/srl-labs/clab:0.77.0
+              working_dir: /workspace
+              attach_docker_socket: true
+              network_mode: host
+              timeout_seconds: 180
+              command:
+                - |
+                  set -e
+                  for r in r1 r2 r3 r4; do
+                    C="clab-meridian-lab-$r"
+                    echo "--- waiting for ${C} ---"
+                    for i in $(seq 1 30); do
+                      if docker exec "$C" vtysh -c 'show version' >/dev/null 2>&1; then
+                        echo "ready: $r (attempt $i)"
+                        break
+                      fi
+                      sleep 2
+                      if [ "$i" = "30" ]; then
+                        echo "TIMEOUT waiting for $r" >&2
+                        exit 1
+                      fi
+                    done
+                  done
+                  echo "All four routers are answering vtysh."
+            policy:
+              timeout_sec: 240
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+          - id: deploy_gitea
+            name: Deploy Gitea backup server
+            type: step
+            kind: EXECUTE
+            phase: IMPLEMENTATION
+            handler: container.run
+            position_x: 920
+            position_y: 360
+            mounted_files:
+              - seed.sh
+            params:
+              image: ghcr.io/srl-labs/clab:0.77.0
+              working_dir: /workspace
+              attach_docker_socket: true
+              network_mode: host
+              timeout_seconds: 300
+              env:
+                GITEA_CONTAINER: meridian-gitea
+                GITEA_URL: "http://localhost:3000"
+                GITEA_ORG: "{{ vars.GITEA_ORG }}"
+                ADMIN_USER: "{{ secret('vault://orgs/default/secrets/meridian/gitea/admin/username') }}"
+                ADMIN_PASSWORD: "{{ secret('vault://orgs/default/secrets/meridian/gitea/admin/password') }}"
+              command:
+                - |
+                  if [ "{{ inputs.deploy_gitea }}" != "True" ]; then
+                    echo "Gitea deployment skipped (deploy_gitea unchecked)."
+                    exit 0
+                  fi
+                  set -e
+                  docker rm -f meridian-gitea 2>/dev/null || true
+                  docker run -d --name meridian-gitea \
+                    -p 3000:3000 \
+                    -e GITEA__security__INSTALL_LOCK=true \
+                    -e GITEA__server__ROOT_URL="http://localhost:3000/" \
+                    gitea/gitea:1.22-rootless
+                  sh /attachments/seed.sh
+          - id: join
+            name: Datacenter ready
+            type: join
+            join_mode: all
+            failure_policy: propagate
+            cancel_policy: wait
+            position_x: 1820
+            position_y: 200
+          - id: hold
+            name: Interact, then approve to tear down
+            type: approval
+            phase: IMPLEMENTATION
+            position_x: 2120
+            position_y: 200
+            params:
+              title: "Demo datacenter is up — approve to tear it down"
+              message: >-
+                The lab is running. SSH to the routers at 172.20.30.11-14 (user
+                clab) and exercise the Ops/Net flows against them; browse Gitea at
+                http://localhost:3000 if deployed. This gate never expires.
+                APPROVE to tear the lab down and clean the host; REJECT to leave
+                it running.
+          - id: teardown
+            name: Destroy lab and Gitea
+            type: step
+            kind: EXECUTE
+            phase: CLEANUP
+            handler: container.run
+            position_x: 2420
+            position_y: 120
+            mounted_files:
+              - topology.clab.yml
+              - frr/
+            params:
+              image: ghcr.io/srl-labs/clab:0.77.0
+              working_dir: /tmp/meridian-lab
+              attach_docker_socket: true
+              network_mode: host
+              privileged: true
+              pid_mode: host
+              extra_mounts:
+                - "/var/run/netns:/var/run/netns:shared"
+                - "/var/lib/docker:/var/lib/docker"
+                - "/tmp/meridian-lab:/tmp/meridian-lab"
+              timeout_seconds: 300
+              command:
+                - |
+                  set -e
+                  LAB_NAME=meridian-lab
+                  WORKDIR=/tmp/meridian-lab
+                  TOPOLOGY="${WORKDIR}/topology.run.clab.yml"
+                  mkdir -p "${WORKDIR}"
+                  if [ ! -f "${TOPOLOGY}" ]; then
+                    cp -ar /attachments/* "${WORKDIR}/" 2>/dev/null || true
+                    sed \
+                      -e "s#__HEGEMONY_CLAB_NAME__#${LAB_NAME}#g" \
+                      -e "s#__HEGEMONY_CLAB_WORKDIR__#${WORKDIR}#g" \
+                      "${WORKDIR}/topology.clab.yml" > "${TOPOLOGY}"
+                  fi
+                  containerlab destroy -t "${TOPOLOGY}" --cleanup || true
+                  docker network rm meridian-lab-mgmt 2>/dev/null || true
+                  rm -rf "${WORKDIR}" || true
+                  if [ "{{ inputs.remove_gitea }}" = "True" ]; then
+                    docker rm -f meridian-gitea 2>/dev/null || true
+                    echo "Removed Gitea container."
+                  fi
+                  echo "Teardown complete."
+            policy:
+              timeout_sec: 330
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+          - id: done
+            name: Lab torn down
+            type: terminal
+            terminal_status: success
+            position_x: 2720
+            position_y: 40
+          - id: left_running
+            name: Lab left running
+            type: terminal
+            terminal_status: success
+            position_x: 2720
+            position_y: 260
+          - id: failed
+            name: Lifecycle failed
+            type: terminal
+            terminal_status: failure
+            position_x: 2420
+            position_y: 400
+        edges:
+          - id: e_start_build
+            source: start:start
+            target: build_image
+          - id: e_build_fork
+            source: build_image:success
+            target: fork
+          - id: e_build_failed
+            source: build_image:failure
+            target: failed
+          - id: e_fork_lab
+            source: fork:fork
+            target: deploy_lab
+          - id: e_fork_gitea
+            source: fork:fork
+            target: deploy_gitea
+          - id: e_lab_connect
+            source: deploy_lab:success
+            target: connect_workers
+          - id: e_lab_join_fail
+            source: deploy_lab:failure
+            target: join
+          - id: e_connect_wait
+            source: connect_workers:success
+            target: wait_ready
+          - id: e_connect_join_fail
+            source: connect_workers:failure
+            target: join
+          - id: e_wait_join
+            source: wait_ready:success
+            target: join
+          - id: e_wait_join_fail
+            source: wait_ready:failure
+            target: join
+          - id: e_gitea_join
+            source: deploy_gitea:success
+            target: join
+          - id: e_gitea_join_fail
+            source: deploy_gitea:failure
+            target: join
+          - id: e_join_hold
+            source: join:joined
+            target: hold
+          - id: e_join_failed
+            source: join:join_failed
+            target: failed
+          - id: e_hold_teardown
+            source: hold:approved
+            target: teardown
+          - id: e_hold_left
+            source: hold:rejected
+            target: left_running
+          - id: e_teardown_done
+            source: teardown:success
+            target: done
+          - id: e_teardown_failed
+            source: teardown:failure
+            target: failed
+      interface_graph:
+        nodes:
+          - id: sec_options
+            kind: section
+            position_x: 80
+            position_y: 80
+            width: 520
+            height: 260
+            data:
+              label: Datacenter options
+              description: What to stand up now, and what to remove at teardown.
+              runtime_layout: card
+              collapsible: false
+          - id: f_deploy_gitea
+            kind: field
+            parent_id: sec_options
+            position_x: 40
+            position_y: 60
+            data:
+              label: Deploy Gitea backup server
+              field_id: deploy_gitea
+              field_type: core.bool
+              required: false
+              default_value: true
+              description: Also stand up a local Gitea for the config-backup workflow.
+              config: {}
+          - id: f_remove_gitea
+            kind: field
+            parent_id: sec_options
+            position_x: 40
+            position_y: 150
+            data:
+              label: Remove Gitea at teardown
+              field_id: remove_gitea
+              field_type: core.bool
+              required: false
+              default_value: true
+              description: Remove the Gitea container when the lab is torn down.
+              config: {}
+        edges:
+          - id: e_gitea_enables_remove
+            source: f_deploy_gitea
+            target: f_remove_gitea
+            relations:
+              - semantic_type: enabled_when
+                operator: truthy
+                value: null
+
+flow_attachments:
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: Dockerfile
+    content_file: src/files/lab/Dockerfile
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: entrypoint.sh
+    content_file: src/files/lab/entrypoint.sh
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: topology.clab.yml
+    content_file: src/files/lab/topology.clab.yml
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: frr/daemons
+    content_file: src/files/lab/frr/daemons
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: frr/vtysh.conf
+    content_file: src/files/lab/frr/vtysh.conf
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: frr/r1.conf
+    content_file: src/files/lab/frr/r1.conf
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: frr/r2.conf
+    content_file: src/files/lab/frr/r2.conf
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: frr/r3.conf
+    content_file: src/files/lab/frr/r3.conf
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: frr/r4.conf
+    content_file: src/files/lab/frr/r4.conf
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: seed.sh
+    content_file: src/files/gitea/seed.sh

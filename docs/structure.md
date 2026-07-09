@@ -14,6 +14,8 @@ does not publish Python packages or runtime plugin modules.
 ```text
 manifest.yaml
 src/bundles/
+src/files/
+demo-inventory/
 dist/
 scripts/build.py
 scripts/validate.py
@@ -21,20 +23,30 @@ scripts/validate.py
 
 - `manifest.yaml` lists generated bundles and their source/output paths.
 - `src/bundles/*.yaml` contains human-edited Configuration Exchange fragments.
+- `src/files/**` holds larger flow-attachment payloads (Dockerfile, containerlab
+  topology, FRR configs, provisioning scripts) referenced from
+  `flow_attachments` entries via `content_file:` and inlined at build time.
+- `demo-inventory/{sites,devices}/**` is the Git inventory source of truth read
+  by the `lab-inventory` git provider (`schema_version: 1` records; site paths
+  derived from directory layout, `external_id` equal to the file stem).
 - `dist/*.yaml` contains generated single-YAML bundles committed for direct use.
-- `scripts/build.py` merges fragments deterministically and verifies generated
-  bundles are in sync.
-- `scripts/validate.py` checks cross-fragment references and current secret-ref
-  patterns before bundles are published.
+- `scripts/build.py` merges fragments deterministically, inlines `content_file`
+  attachments, and verifies generated bundles are in sync.
+- `scripts/validate.py` checks cross-fragment references, secret-ref patterns,
+  step-handler ids, and the `demo-inventory/` tree before bundles are published.
 
 ## Fragment Rules
 
 - Every source fragment must be a YAML mapping with `schema_version: 2`.
 - Edit source fragments, not files under `dist/`.
-- Files in a bundle source directory are merged in lexical filename order.
+- Files in a bundle source directory are merged in lexical filename order
+  (the demo fragments are numbered `05`–`55` to control that order).
 - Top-level list sections are concatenated.
 - Top-level mapping sections are shallow-merged by key.
 - Unsupported top-level keys fail the build so typos do not silently ship.
+- A `flow_attachments` entry may set `content_file: <repo-relative path>` in
+  place of `content:`; the build reads that file (from `src/files/`) and inlines
+  it as the attachment `content`. Setting both is an error.
 
 The generated bundle is consumed by Hegemony's generic instance bootstrap path:
 mount the generated `dist/` directory into the API container at `/bootstrap`.

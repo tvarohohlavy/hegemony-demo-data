@@ -1,0 +1,60 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Inventory providers pull devices and sites from external systems of record.
+#
+# The git provider is the star of the demo: it reads the Meridian lab inventory
+# tree (demo-inventory/) straight from the public "hegemony-demo-data" Git
+# repository (referenced by NAME — the platform resolves it to the repository's
+# local UUID on import) and merges a shared SSH credential into every device via
+# default_access_config, so the per-device files carry no secrets. It is
+# imported ENABLED and works immediately; the four synced routers only become
+# reachable once "Lab: Bootstrap demo datacenter" has deployed the containerlab
+# topology.
+#
+# The NetBox and Infrahub entries are wiring examples only: imported DISABLED
+# so the self-contained demo never reaches for an external system. Point them
+# at a real instance and flip enabled to true to activate.
+
+schema_version: 2
+
+inventory_providers:
+  - name: lab-inventory
+    provider_type: git
+    enabled: true
+    description: Meridian lab routers, read from demo-inventory/ in the public demo repo.
+    config:
+      # Portable name reference to a git_repositories entry; resolved to this
+      # instance's repository UUID on import.
+      git_repository: hegemony-demo-data
+      branch: main
+      path: demo-inventory
+      # Shared SSH credential merged into every synced device, so the device
+      # files in the repo stay credential-free.
+      default_access_config:
+        ssh:
+          username_ref: "{{ secret('vault://orgs/default/secrets/meridian/lab/ssh/username') }}"
+          password_ref: "{{ secret('vault://orgs/default/secrets/meridian/lab/ssh/password') }}"
+      query_cache_ttl_seconds: 60
+
+  - name: netbox-example
+    provider_type: netbox
+    enabled: false
+    description: Example NetBox provider wiring (disabled by default).
+    config:
+      url: "http://host.docker.internal:8001/"
+      token_ref: "{{ secret('vault://orgs/default/secrets/meridian/integrations/netbox/token') }}"
+      auth_scheme: Bearer
+      verify_tls: false
+
+  - name: infrahub-example
+    provider_type: infrahub
+    enabled: false
+    description: Example Infrahub provider wiring (disabled by default).
+    config:
+      url: https://infrahub.meridian.invalid
+      token_ref: "{{ env('HEGEMONY_DEMO_INFRAHUB_TOKEN') }}"
+      verify_tls: true
+      branch: main
+      device_kind: InfraDevice

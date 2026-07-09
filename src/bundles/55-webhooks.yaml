@@ -1,0 +1,61 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Inbound webhook endpoints demonstrate event-driven triggering with different
+# auth modes, source-IP allow lists, and JSONPath payload mapping. Webhook
+# secrets and path tokens are generated on import and must be configured in the
+# UI before use; a device-targeting flow triggered this way also needs target
+# routers selected. Source IPs use TEST-NET ranges.
+
+schema_version: 2
+
+webhooks:
+  - name: "Meridian Webhook: GitOps drift detected"
+    description: Synthetic GitOps drift event that triggers a configuration backup.
+    flows:
+      - "Ops: Backup lab configs to Git"
+    auth_mode: bearer
+    replay_window_seconds: 0
+    rate_limit_per_minute: 20
+    allowed_source_ips:
+      - 203.0.113.0/24
+    payload_mapping:
+      run_name: $.repository.full_name
+      params:
+        change_id: $.change.id
+        source: gitops
+    enabled: true
+  - name: "Meridian Webhook: Monitoring alarm"
+    description: Synthetic monitoring alarm that triggers a routing health check.
+    flows:
+      - "Net: Lab routing health check"
+    auth_mode: hmac_sha256
+    replay_window_seconds: 300
+    rate_limit_per_minute: 60
+    allowed_source_ips:
+      - 192.0.2.0/24
+    payload_mapping:
+      run_name: $.alarm.name
+      params:
+        alarm: $.alarm.name
+        severity: $.alarm.severity
+        source: monitoring
+    enabled: true
+  - name: "Meridian Webhook: ITSM change window"
+    description: Synthetic ITSM change-window event that triggers a service prefix announcement.
+    flows:
+      - "Ops: Announce service prefix"
+    auth_mode: hmac_sha256
+    replay_window_seconds: 600
+    rate_limit_per_minute: 15
+    allowed_source_ips:
+      - 192.0.2.0/24
+      - 198.51.100.0/24
+    payload_mapping:
+      run_name: $.number
+      params:
+        change_id: $.number
+        service_address: $.change.service_address
+        source: itsm
+    enabled: true

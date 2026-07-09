@@ -1,0 +1,133 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Notification destinations and the flow events they subscribe to. Chat-service
+# destinations use PRESET destination types (discord/slack/telegram/teams/webex)
+# rather than raw Shoutrrr URLs or raw webhooks: each takes friendly fields (a
+# token or workflow URL) resolved from the vault. Ntfy has no preset so it uses
+# the raw shoutrrr transport, and a custom signed webhook shows the raw
+# outgoing_webhook transport. Email uses environment-configurable SMTP settings
+# (a local MailHog-style sink by default). All external hosts are .invalid.
+
+schema_version: 2
+
+notification_destinations:
+  - name: "Meridian NOC Email"
+    type: email
+    enabled: true
+    config_json:
+      to:
+        - noc@meridian.example
+      from: hegemony@meridian.example
+      smtp_host_ref: "{{ env('HEGEMONY_DEMO_SMTP_HOST', 'demo-notification-smtp') }}"
+      smtp_port_ref: "{{ env('HEGEMONY_DEMO_SMTP_PORT', '1025') }}"
+      smtp_use_tls_ref: "{{ env('HEGEMONY_DEMO_SMTP_USE_TLS', 'false') }}"
+      smtp_use_starttls_ref: "{{ env('HEGEMONY_DEMO_SMTP_USE_STARTTLS', 'false') }}"
+  - name: "Meridian Security Email"
+    type: email
+    enabled: true
+    config_json:
+      to:
+        - security@meridian.example
+      from: hegemony@meridian.example
+      smtp_host_ref: "{{ env('HEGEMONY_DEMO_SMTP_HOST', 'demo-notification-smtp') }}"
+      smtp_port_ref: "{{ env('HEGEMONY_DEMO_SMTP_PORT', '1025') }}"
+      smtp_use_tls_ref: "{{ env('HEGEMONY_DEMO_SMTP_USE_TLS', 'false') }}"
+      smtp_use_starttls_ref: "{{ env('HEGEMONY_DEMO_SMTP_USE_STARTTLS', 'false') }}"
+  # Chat-service destinations via preset types (friendly fields, not raw URLs).
+  - name: "Meridian Discord"
+    type: discord
+    enabled: true
+    config_json:
+      token: "{{ secret('vault://orgs/default/secrets/meridian/integrations/notify/discord_token') }}"
+      webhook_id: "123456789012345678"
+  - name: "Meridian Slack"
+    type: slack
+    enabled: true
+    config_json:
+      token: "{{ secret('vault://orgs/default/secrets/meridian/integrations/notify/slack_token') }}"
+      botname: Meridian
+  - name: "Meridian Telegram"
+    type: telegram
+    enabled: true
+    config_json:
+      token: "{{ secret('vault://orgs/default/secrets/meridian/integrations/notify/telegram_token') }}"
+      chats: "123456789"
+  - name: "Meridian Teams"
+    type: teams_power_automate
+    enabled: true
+    config_json:
+      url: "{{ secret('vault://orgs/default/secrets/meridian/integrations/notify/teams_url') }}"
+  - name: "Meridian Webex"
+    type: webex_incoming_webhook
+    enabled: true
+    config_json:
+      webhook_token: "{{ secret('vault://orgs/default/secrets/meridian/integrations/notify/webex_token') }}"
+  # Ntfy has no preset, so it uses the raw shoutrrr transport.
+  - name: "Meridian Ntfy"
+    type: shoutrrr
+    enabled: true
+    config_json:
+      url_secret: "{{ secret('vault://orgs/default/secrets/meridian/integrations/notify/ntfy_url') }}"
+      title: Meridian Networks Demo
+  # A custom signed webhook, showing the raw outgoing_webhook transport and HMAC
+  # request signing (no preset covers this).
+  - name: "Meridian Webhook: Signed HMAC"
+    type: outgoing_webhook
+    enabled: true
+    config_json:
+      url: https://meridian-notify.invalid/webhooks/signed
+      method: POST
+      headers:
+        X-Meridian-Receiver: synthetic-signed
+      timeout_seconds: 5
+      retry_count: 0
+      verify_tls: true
+      auth_type: none
+      signing:
+        algorithm: hmac-sha256
+        secret_ref: "{{ secret('vault://orgs/default/secrets/meridian/integrations/webhook/signing_secret') }}"
+        signature_header: X-Meridian-Signature
+        timestamp_header: X-Meridian-Timestamp
+        signed_content: timestamp_dot_body
+        prefix: "sha256="
+
+flow_subscriptions:
+  # Backup outcomes go to the NOC.
+  - flow: "Ops: Backup lab configs to Git"
+    destination: "Meridian NOC Email"
+    event: run.completed
+    enabled: true
+  - flow: "Ops: Backup lab configs to Git"
+    destination: "Meridian NOC Email"
+    event: run.failed
+    enabled: true
+  # Approval requests and outcomes for the flagship change flow.
+  - flow: "Ops: Announce service prefix"
+    destination: "Meridian NOC Email"
+    event: approval.requested
+    enabled: true
+  - flow: "Ops: Announce service prefix"
+    destination: "Meridian NOC Email"
+    event: run.completed
+    enabled: true
+  - flow: "Ops: Announce service prefix"
+    destination: "Meridian Slack"
+    event: run.completed
+    enabled: false
+  # Health check failures alert Security; other channels shown as examples.
+  - flow: "Net: Lab routing health check"
+    destination: "Meridian Security Email"
+    event: run.failed
+    enabled: true
+  - flow: "Net: Lab routing health check"
+    destination: "Meridian Webhook: Signed HMAC"
+    event: run.failed
+    enabled: false
+  # The long-running lab flow emails the NOC when it parks at its teardown
+  # approval gate, so nobody has to watch the run.
+  - flow: "Lab: Provision and tear down demo datacenter"
+    destination: "Meridian NOC Email"
+    event: approval.requested
+    enabled: true
