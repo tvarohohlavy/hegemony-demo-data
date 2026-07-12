@@ -4,16 +4,20 @@
 
 # Git repositories Hegemony connects to directly.
 #
-# Hegemony clones repositories over HTTPS and refuses URLs that resolve to
-# private/internal addresses (SSRF protection). The demo therefore uses a
-# single public repository as its Git-backed inventory source: THIS repo,
-# whose demo-inventory/ tree is read by the "lab-inventory" git provider
-# (see 25-inventory-providers.yaml).
+# By default Hegemony clones over HTTPS only and refuses URLs that resolve to
+# private/internal addresses (SSRF protection):
+#   * hegemony-demo-data — THIS public repository, whose demo-inventory/ tree
+#     is read by the "lab-inventory" git provider (25-inventory-providers.yaml).
+#   * config-backups — the demo Gitea repository the backup flow pushes to.
+#     It is http:// on the Docker host, so browsing it through the platform
+#     requires the demo stack's HEGEMONY_GIT_ALLOW_INSECURE_URLS=true opt-out
+#     (set by the demo compose overlay). The repository is public on the demo
+#     Gitea, so it clones anonymously; it appears once "Lab: Provision and tear
+#     down demo datacenter" has stood Gitea up.
 #
-# The config-backup workflow pushes to a local Gitea instead, but it does so
-# from inside its own container (raw git push), not through a Hegemony git
-# repository — internal hosts are intentionally unreachable from the platform's
-# git machinery.
+# The backup flow itself pushes with credentials from inside its own container;
+# this read-only entry exists so operators can inspect the pushed backups in
+# Hegemony's repository browser.
 
 schema_version: 2
 
@@ -22,3 +26,7 @@ git_repositories:
     url: https://github.com/tvarohohlavy/hegemony-demo-data.git
     branch: main
     sync_stale_seconds: 300
+  - name: config-backups
+    url: "http://host.docker.internal:3000/meridian/config-backups.git"
+    branch: main
+    sync_stale_seconds: 60

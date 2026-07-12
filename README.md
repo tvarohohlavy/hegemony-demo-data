@@ -122,6 +122,11 @@ Instance bootstrap is intentionally one-shot. To apply changed demo data, reset 
   the git inventory source is this **public** repository over HTTPS. The
   `demo-inventory/` tree must therefore exist on the default branch of the
   repository the provider points at for the sync to succeed.
+- The `config-backups` git repository points at the demo Gitea over `http://`
+  on the Docker host so operators can browse pushed backups in Hegemony's
+  repository browser. This needs `HEGEMONY_GIT_ALLOW_INSECURE_URLS=true` (the
+  demo compose overlay sets it) and only works after the lab bootstrap flow has
+  deployed Gitea.
 - For reproducible installs, consume a tagged release of this repository (see
   [docs/release.md](docs/release.md)) instead of tracking `main`. Hegemony's
   CI pins a specific commit of this repository for its bundle contract check.
