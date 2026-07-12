@@ -1,21 +1,31 @@
 # SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Meridian virtual lab: eight FRR routers across three lab sites running
-# multi-area OSPF.
+# Meridian virtual lab: eleven FRR routers and four Linux endpoint hosts across
+# four lab sites running multi-area OSPF.
 #
-#   dc1 (area 1): dc1-core-01/02 are ABRs on the area-0 backbone; the two
-#                 access routers are dual-homed to both cores.
-#   br1 (area 2): br1-edge-01 is an ABR, dual-homed to both cores over area 0.
-#   br2 (area 3): br2-edge-01 likewise.
+#   dc1 (area 1): dc1-core-01/02 are ABRs on the area-0 backbone; two access
+#                 routers are dual-homed to both cores; dc1-srv-01 hangs off
+#                 dc1-acc-01 on LAN 10.101.1.0/24.
+#   dc2 (area 4): dc2-core-01/02 ABRs, meshed to dc1 over the backbone and
+#                 each connected to one branch; dc2-acc-01 dual-homed;
+#                 dc2-srv-01 on LAN 10.104.1.0/24.
+#   br1 (area 2): br1-edge-01 ABR homed to dc1-core-01/02 and dc2-core-01;
+#                 br1-srv-01 on LAN 10.102.1.0/24.
+#   br2 (area 3): br2-edge-01 ABR homed to dc1-core-01/02 and dc2-core-02;
+#                 br2-srv-01 on LAN 10.103.1.0/24.
 #
-# Every router has a static management address on a fixed subnet so the seeded
-# Git inventory (demo-inventory/) can target it by mgmt_host:
-#   dc1: .11-.14   br1: .21-.22   br2: .31-.32
+# Endpoint hosts run sshd (image meridian/lab-host) so Hegemony's shell.execute
+# reaches them like any server; clab exec directives give them a LAN address
+# and a 10.0.0.0/8 route via their access router (management stays on eth0).
+#
+# Static management addresses (172.20.30.0/24) so the seeded Git inventory can
+# target every node by mgmt_host:
+#   dc1: .11-.15   br1: .21-.23   br2: .31-.33   dc2: .41-.44
 #
 # The __HEGEMONY_CLAB_*__ placeholders are substituted by the Bootstrap flow at
 # deploy time so the bind sources resolve identically inside the orchestrator
-# container and on the host Docker daemon that creates the router containers.
+# container and on the host Docker daemon that creates the node containers.
 name: __HEGEMONY_CLAB_NAME__
 
 mgmt:
@@ -27,11 +37,12 @@ topology:
     linux:
       image: meridian/frr-lab:latest
       # Shared FRR daemons file (zebra + ospfd); per-router frr.conf is bound
-      # per node below.
+      # per node below. Endpoint hosts override the image and carry no binds.
       binds:
         - __HEGEMONY_CLAB_WORKDIR__/frr/daemons:/etc/frr/daemons
         - __HEGEMONY_CLAB_WORKDIR__/frr/vtysh.conf:/etc/frr/vtysh.conf
   nodes:
+    # ── dc1 ──────────────────────────────────────────────────────────────
     dc1-core-01:
       kind: linux
       mgmt-ipv4: 172.20.30.11
@@ -52,6 +63,39 @@ topology:
       mgmt-ipv4: 172.20.30.14
       binds:
         - __HEGEMONY_CLAB_WORKDIR__/frr/dc1-acc-02.conf:/etc/frr/frr.conf
+    dc1-srv-01:
+      kind: linux
+      image: meridian/lab-host:latest
+      mgmt-ipv4: 172.20.30.15
+      binds: []
+      exec:
+        - ip address add 10.101.1.10/24 dev eth1
+        - ip route add 10.0.0.0/8 via 10.101.1.1 dev eth1
+    # ── dc2 ──────────────────────────────────────────────────────────────
+    dc2-core-01:
+      kind: linux
+      mgmt-ipv4: 172.20.30.41
+      binds:
+        - __HEGEMONY_CLAB_WORKDIR__/frr/dc2-core-01.conf:/etc/frr/frr.conf
+    dc2-core-02:
+      kind: linux
+      mgmt-ipv4: 172.20.30.42
+      binds:
+        - __HEGEMONY_CLAB_WORKDIR__/frr/dc2-core-02.conf:/etc/frr/frr.conf
+    dc2-acc-01:
+      kind: linux
+      mgmt-ipv4: 172.20.30.43
+      binds:
+        - __HEGEMONY_CLAB_WORKDIR__/frr/dc2-acc-01.conf:/etc/frr/frr.conf
+    dc2-srv-01:
+      kind: linux
+      image: meridian/lab-host:latest
+      mgmt-ipv4: 172.20.30.44
+      binds: []
+      exec:
+        - ip address add 10.104.1.10/24 dev eth1
+        - ip route add 10.0.0.0/8 via 10.104.1.1 dev eth1
+    # ── br1 ──────────────────────────────────────────────────────────────
     br1-edge-01:
       kind: linux
       mgmt-ipv4: 172.20.30.21
@@ -62,6 +106,15 @@ topology:
       mgmt-ipv4: 172.20.30.22
       binds:
         - __HEGEMONY_CLAB_WORKDIR__/frr/br1-acc-01.conf:/etc/frr/frr.conf
+    br1-srv-01:
+      kind: linux
+      image: meridian/lab-host:latest
+      mgmt-ipv4: 172.20.30.23
+      binds: []
+      exec:
+        - ip address add 10.102.1.10/24 dev eth1
+        - ip route add 10.0.0.0/8 via 10.102.1.1 dev eth1
+    # ── br2 ──────────────────────────────────────────────────────────────
     br2-edge-01:
       kind: linux
       mgmt-ipv4: 172.20.30.31
@@ -72,6 +125,14 @@ topology:
       mgmt-ipv4: 172.20.30.32
       binds:
         - __HEGEMONY_CLAB_WORKDIR__/frr/br2-acc-01.conf:/etc/frr/frr.conf
+    br2-srv-01:
+      kind: linux
+      image: meridian/lab-host:latest
+      mgmt-ipv4: 172.20.30.33
+      binds: []
+      exec:
+        - ip address add 10.103.1.10/24 dev eth1
+        - ip route add 10.0.0.0/8 via 10.103.1.1 dev eth1
   links:
     # Area 0 backbone
     - endpoints: ["dc1-core-01:eth1", "dc1-core-02:eth1"]   # 10.0.0.0/30
@@ -79,11 +140,23 @@ topology:
     - endpoints: ["dc1-core-02:eth2", "br1-edge-01:eth2"]   # 10.0.2.0/30
     - endpoints: ["dc1-core-01:eth3", "br2-edge-01:eth1"]   # 10.0.3.0/30
     - endpoints: ["dc1-core-02:eth3", "br2-edge-01:eth2"]   # 10.0.4.0/30
-    # Area 1 (dc1 access, dual-homed)
+    - endpoints: ["dc2-core-01:eth1", "dc2-core-02:eth1"]   # 10.0.5.0/30
+    - endpoints: ["dc1-core-01:eth6", "dc2-core-01:eth2"]   # 10.0.6.0/30
+    - endpoints: ["dc1-core-02:eth6", "dc2-core-02:eth2"]   # 10.0.7.0/30
+    - endpoints: ["dc2-core-01:eth3", "br1-edge-01:eth4"]   # 10.0.8.0/30
+    - endpoints: ["dc2-core-02:eth3", "br2-edge-01:eth4"]   # 10.0.9.0/30
+    # Area 1 (dc1 access, dual-homed) + endpoint LAN
     - endpoints: ["dc1-core-01:eth4", "dc1-acc-01:eth1"]    # 10.1.1.0/30
     - endpoints: ["dc1-core-02:eth4", "dc1-acc-01:eth2"]    # 10.1.2.0/30
     - endpoints: ["dc1-core-01:eth5", "dc1-acc-02:eth1"]    # 10.1.3.0/30
     - endpoints: ["dc1-core-02:eth5", "dc1-acc-02:eth2"]    # 10.1.4.0/30
-    # Area 2 (br1) / Area 3 (br2)
+    - endpoints: ["dc1-acc-01:eth3", "dc1-srv-01:eth1"]     # 10.101.1.0/24
+    # Area 4 (dc2 access, dual-homed) + endpoint LAN
+    - endpoints: ["dc2-core-01:eth4", "dc2-acc-01:eth1"]    # 10.4.1.0/30
+    - endpoints: ["dc2-core-02:eth4", "dc2-acc-01:eth2"]    # 10.4.2.0/30
+    - endpoints: ["dc2-acc-01:eth3", "dc2-srv-01:eth1"]     # 10.104.1.0/24
+    # Area 2 (br1) / Area 3 (br2) + endpoint LANs
     - endpoints: ["br1-edge-01:eth3", "br1-acc-01:eth1"]    # 10.2.1.0/30
+    - endpoints: ["br1-acc-01:eth2", "br1-srv-01:eth1"]     # 10.102.1.0/24
     - endpoints: ["br2-edge-01:eth3", "br2-acc-01:eth1"]    # 10.3.1.0/30
+    - endpoints: ["br2-acc-01:eth2", "br2-srv-01:eth1"]     # 10.103.1.0/24

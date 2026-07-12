@@ -18,4 +18,4 @@ tags:
 custom_fields:
   ospf_area: "0/2"
   ospf_router_id: 10.255.255.3
-  description: Branch ABR (areas 0+2)
+  description: Branch ABR (areas 0+2), homed to dc1+dc2

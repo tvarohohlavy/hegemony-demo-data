@@ -116,8 +116,13 @@ flow_subscriptions:
     destination: "Meridian Slack"
     event: run.completed
     enabled: false
-  # Health check failures alert Security; other channels shown as examples.
+  # Health check and end-to-end test failures alert Security; other channels
+  # shown as examples.
   - flow: "Net: Lab routing health check"
+    destination: "Meridian Security Email"
+    event: run.failed
+    enabled: true
+  - flow: "Net: End-to-end reachability test"
     destination: "Meridian Security Email"
     event: run.failed
     enabled: true

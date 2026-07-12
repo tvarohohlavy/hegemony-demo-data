@@ -18,4 +18,4 @@ tags:
 custom_fields:
   ospf_area: "3"
   ospf_router_id: 10.255.255.8
-  description: Branch access router
+  description: Branch access router (serves br2-srv-01)

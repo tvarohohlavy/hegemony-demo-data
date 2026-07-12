@@ -3,12 +3,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 # A single long-running lifecycle flow for the self-contained demo datacenter.
-# It builds an FRR+sshd image, deploys an eight-router multi-area OSPF lab
-# (datacenter dc1 with backbone ABRs + two branches, see
-# src/files/lab/topology.clab.yml) with fixed management addresses, attaches
-# the lab management network to the Hegemony workers (so the seeded inventory
-# becomes reachable), and optionally stands up a local Gitea for config
-# backups. It then PARKS on an approval gate
+# It builds the lab images (FRR+sshd routers, Alpine+sshd endpoint hosts),
+# deploys an 11-router / 4-host multi-area OSPF lab (two datacenters + two
+# branches, see src/files/lab/topology.clab.yml) with fixed management
+# addresses, attaches the lab management network to the Hegemony workers (so
+# the seeded inventory becomes reachable), and optionally stands up a local
+# Gitea for config backups. It then PARKS on an approval gate
 # WITH NO EXPIRY: the run stays paused — the lab keeps running on the host —
 # while you SSH to the routers and exercise the other flows against them.
 # Approving the gate tears the lab down; rejecting leaves it running. This is
@@ -20,11 +20,11 @@ schema_version: 2
 flows:
   - name: "Lab: Provision and tear down demo datacenter"
     description: >-
-      Build the FRR lab image, deploy the 8-router multi-area OSPF lab (dc1 +
-      two branches), attach the lab network to the workers, and optionally
-      stand up Gitea; then hold at an approval gate (no expiry) so you can
-      interact with the lab. Approve to tear it down, reject to leave it
-      running.
+      Build the lab images, deploy the multi-area OSPF lab (11 routers and 4
+      Linux endpoint hosts across dc1, dc2 and two branches), attach the lab
+      network to the workers, and optionally stand up Gitea; then hold at an
+      approval gate (no expiry) so you can interact with the lab. Approve to
+      tear it down, reject to leave it running.
     definition:
       graph:
         nodes:
@@ -34,7 +34,7 @@ flows:
             position_x: 0
             position_y: 200
           - id: build_image
-            name: Build FRR lab image
+            name: Build lab images
             type: step
             kind: EXECUTE
             phase: PREPARE
@@ -44,6 +44,7 @@ flows:
             mounted_files:
               - Dockerfile
               - entrypoint.sh
+              - host/
             params:
               image: ghcr.io/srl-labs/clab:0.77.0
               working_dir: /tmp/meridian-lab
@@ -63,6 +64,9 @@ flows:
                   echo "Building meridian/frr-lab:latest ..."
                   docker build --build-arg LAB_PASSWORD="${LAB_PASSWORD}" \
                     -t meridian/frr-lab:latest "${WORKDIR}"
+                  echo "Building meridian/lab-host:latest ..."
+                  docker build --build-arg LAB_PASSWORD="${LAB_PASSWORD}" \
+                    -t meridian/lab-host:latest "${WORKDIR}/host"
             policy:
               timeout_sec: 660
               retries: 0
@@ -163,9 +167,10 @@ flows:
                 - |
                   set -e
                   for r in dc1-core-01 dc1-core-02 dc1-acc-01 dc1-acc-02 \
+                           dc2-core-01 dc2-core-02 dc2-acc-01 \
                            br1-edge-01 br1-acc-01 br2-edge-01 br2-acc-01; do
                     C="clab-meridian-lab-$r"
-                    echo "--- waiting for ${C} ---"
+                    echo "--- waiting for ${C} (vtysh) ---"
                     for i in $(seq 1 30); do
                       if docker exec "$C" vtysh -c 'show version' >/dev/null 2>&1; then
                         echo "ready: $r (attempt $i)"
@@ -178,7 +183,22 @@ flows:
                       fi
                     done
                   done
-                  echo "All four routers are answering vtysh."
+                  for h in dc1-srv-01 dc2-srv-01 br1-srv-01 br2-srv-01; do
+                    C="clab-meridian-lab-$h"
+                    echo "--- waiting for ${C} (sshd) ---"
+                    for i in $(seq 1 15); do
+                      if docker exec "$C" pgrep sshd >/dev/null 2>&1; then
+                        echo "ready: $h (attempt $i)"
+                        break
+                      fi
+                      sleep 2
+                      if [ "$i" = "15" ]; then
+                        echo "TIMEOUT waiting for $h" >&2
+                        exit 1
+                      fi
+                    done
+                  done
+                  echo "All 11 routers answer vtysh and all 4 endpoint hosts run sshd."
             policy:
               timeout_sec: 240
               retries: 0
@@ -241,11 +261,13 @@ flows:
             params:
               title: "Demo datacenter is up — approve to tear it down"
               message: >-
-                The lab is running: 8 routers in 172.20.30.0/24 (dc1 cores+access
-                .11-.14, br1 .21-.22, br2 .31-.32; user clab). Exercise the
-                Ops/Net flows against them; browse Gitea at http://localhost:3000
-                if deployed. This gate never expires. APPROVE to tear the lab
-                down and clean the host; REJECT to leave it running.
+                The lab is running: 11 routers and 4 Linux endpoint hosts in
+                172.20.30.0/24 (dc1 .11-.15, br1 .21-.23, br2 .31-.33,
+                dc2 .41-.44; user clab). Exercise the Ops/Net flows against
+                them — including the end-to-end reachability test from the
+                endpoint hosts — and browse Gitea at http://localhost:3000 if
+                deployed. This gate never expires. APPROVE to tear the lab down
+                and clean the host; REJECT to leave it running.
           - id: teardown
             name: Destroy lab and Gitea
             type: step
@@ -437,6 +459,12 @@ flow_attachments:
     filename: entrypoint.sh
     content_file: src/files/lab/entrypoint.sh
   - flow: "Lab: Provision and tear down demo datacenter"
+    filename: host/Dockerfile
+    content_file: src/files/lab/host/Dockerfile
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: host/entrypoint.sh
+    content_file: src/files/lab/host/entrypoint.sh
+  - flow: "Lab: Provision and tear down demo datacenter"
     filename: topology.clab.yml
     content_file: src/files/lab/topology.clab.yml
   - flow: "Lab: Provision and tear down demo datacenter"
@@ -457,6 +485,15 @@ flow_attachments:
   - flow: "Lab: Provision and tear down demo datacenter"
     filename: frr/dc1-acc-02.conf
     content_file: src/files/lab/frr/dc1-acc-02.conf
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: frr/dc2-core-01.conf
+    content_file: src/files/lab/frr/dc2-core-01.conf
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: frr/dc2-core-02.conf
+    content_file: src/files/lab/frr/dc2-core-02.conf
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: frr/dc2-acc-01.conf
+    content_file: src/files/lab/frr/dc2-acc-01.conf
   - flow: "Lab: Provision and tear down demo datacenter"
     filename: frr/br1-edge-01.conf
     content_file: src/files/lab/frr/br1-edge-01.conf

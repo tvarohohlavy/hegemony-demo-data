@@ -2,20 +2,20 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 schema_version: 1
 kind: device
-external_id: br2-edge-01
-name: br2-edge-01
-mgmt_host: 172.20.30.31
+external_id: dc2-acc-01
+name: dc2-acc-01
+mgmt_host: 172.20.30.43
 mgmt_port: 22
 platform: ios-xe
 vendor: FRRouting
 model: frr-lab
-site: virtual-lab/br2
-role: edge
+site: virtual-lab/dc2
+role: access
 tags:
   - lab
   - frr
-  - edge
+  - access
 custom_fields:
-  ospf_area: "0/3"
-  ospf_router_id: 10.255.255.4
-  description: Branch ABR (areas 0+3), homed to dc1+dc2
+  ospf_area: "4"
+  ospf_router_id: 10.255.255.11
+  description: Dual-homed access router (serves dc2-srv-01)

@@ -18,4 +18,4 @@ tags:
 custom_fields:
   ospf_area: "1"
   ospf_router_id: 10.255.255.5
-  description: Dual-homed access router
+  description: Dual-homed access router (serves dc1-srv-01)

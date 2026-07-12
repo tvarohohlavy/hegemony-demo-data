@@ -13,6 +13,9 @@
 #    launch form exercises every field type and a conditional (visible_when)
 #    field.
 #  * "Lab routing health check" verifies OSPF adjacencies and reachability.
+#  * "End-to-end reachability test" logs into the Linux endpoint hosts with
+#    shell.execute and pings across the routed fabric — the exec-channel
+#    (remote shell) paradigm next to netcli's prompt-scraping.
 
 schema_version: 2
 
@@ -533,6 +536,8 @@ flows:
                       label: Area 2 (Lab Branch 1)
                     - value: "3"
                       label: Area 3 (Lab Branch 2)
+                    - value: "4"
+                      label: Area 4 (Lab DC2)
           - id: sec_change
             kind: section
             position_x: 1200
@@ -709,4 +714,197 @@ flows:
                 multiple: true
                 option_source:
                   kind: inventory.devices
+        edges: []
+
+  - name: "Net: End-to-end reachability test"
+    description: >-
+      Log into the selected Linux endpoint hosts over SSH and ping the chosen
+      lab destinations across the routed fabric — a true end-to-end test from
+      host LAN to host LAN through multi-area OSPF. Demonstrates the remote
+      shell (exec-channel) paradigm on plain Linux devices.
+    definition:
+      graph:
+        nodes:
+          - id: start
+            name: Start
+            type: start
+            position_x: 0
+            position_y: 120
+          - id: reachable
+            name: Reachability probe (TCP/22)
+            type: step
+            kind: CHECK
+            phase: PREPARE
+            handler: probe.connectivity
+            position_x: 300
+            position_y: 120
+            target_selectors:
+              - type: role
+                role: probe_sources
+            params:
+              check_type: tcp_connect
+              port: 22
+              timeout_sec: 10
+              attempts: 2
+            policy:
+              timeout_sec: 60
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+          - id: host_facts
+            name: Collect host facts
+            type: step
+            kind: ACTION
+            phase: PREPARE
+            handler: shell.execute
+            position_x: 600
+            position_y: 120
+            target_selectors:
+              - type: role
+                role: probe_sources
+            params:
+              shell: default
+              fail_fast: true
+              command_timeout_sec: 30
+              commands:
+                - uname -a
+                - ip -brief address
+                - ip route show
+            policy:
+              timeout_sec: 90
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+          - id: ping_targets
+            name: Ping selected destinations
+            type: step
+            kind: ACTION
+            phase: VERIFY
+            handler: shell.execute
+            position_x: 900
+            position_y: 120
+            target_selectors:
+              - type: role
+                role: probe_sources
+            params:
+              shell: sh
+              fail_fast: true
+              command_timeout_sec: 120
+              commands:
+                - |
+                  FAIL=0
+                  for t in {{ inputs.ping_targets | join(' ') }}; do
+                    echo "--- ping $t ---"
+                    ping -c 3 -W 2 "$t" || FAIL=1
+                  done
+                  exit $FAIL
+            policy:
+              timeout_sec: 180
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: false
+          - id: done
+            name: All destinations reachable
+            type: terminal
+            terminal_status: success
+            position_x: 1200
+            position_y: 40
+          - id: failed
+            name: Reachability failed
+            type: terminal
+            terminal_status: failure
+            position_x: 1200
+            position_y: 240
+        edges:
+          - id: e_start_reachable
+            source: start:start
+            target: reachable
+          - id: e_reachable_facts
+            source: reachable:success
+            target: host_facts
+          - id: e_reachable_failed
+            source: reachable:failure
+            target: failed
+          - id: e_facts_ping
+            source: host_facts:success
+            target: ping_targets
+          - id: e_facts_failed
+            source: host_facts:failure
+            target: failed
+          - id: e_ping_done
+            source: ping_targets:success
+            target: done
+          - id: e_ping_failed
+            source: ping_targets:failure
+            target: failed
+      interface_graph:
+        nodes:
+          - id: sec_sources
+            kind: section
+            position_x: 80
+            position_y: 80
+            width: 480
+            height: 200
+            data:
+              label: Probe sources
+              description: Linux endpoint hosts to run the test from.
+              runtime_layout: card
+              collapsible: false
+          - id: f_sources
+            kind: field
+            parent_id: sec_sources
+            position_x: 40
+            position_y: 60
+            data:
+              label: Endpoint hosts
+              field_id: sources
+              field_type: inventory.device
+              required: true
+              description: Pick one or more lab endpoint hosts (role server).
+              config:
+                role: probe_sources
+                multiple: true
+                option_source:
+                  kind: inventory.devices
+          - id: sec_destinations
+            kind: section
+            position_x: 620
+            position_y: 80
+            width: 520
+            height: 220
+            data:
+              label: Destinations
+              runtime_layout: card
+              collapsible: false
+          - id: f_ping_targets
+            kind: field
+            parent_id: sec_destinations
+            position_x: 40
+            position_y: 60
+            data:
+              label: Ping destinations
+              field_id: ping_targets
+              field_type: core.multi_enum
+              required: true
+              default_value:
+                - "10.101.1.10"
+                - "10.104.1.10"
+              description: Lab addresses each source host must reach.
+              config:
+                multiple: true
+                option_source:
+                  kind: core.static
+                  static_options:
+                    - value: "10.101.1.10"
+                      label: dc1-srv-01 (Lab DC1 endpoint LAN)
+                    - value: "10.104.1.10"
+                      label: dc2-srv-01 (Lab DC2 endpoint LAN)
+                    - value: "10.102.1.10"
+                      label: br1-srv-01 (Lab Branch 1 endpoint LAN)
+                    - value: "10.103.1.10"
+                      label: br2-srv-01 (Lab Branch 2 endpoint LAN)
+                    - value: "10.255.255.1"
+                      label: dc1-core-01 loopback (backbone)
+                    - value: "10.255.255.9"
+                      label: dc2-core-01 loopback (backbone)
         edges: []
