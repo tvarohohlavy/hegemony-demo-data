@@ -496,9 +496,9 @@ inventory_providers:
     device_kind: InfraDevice
 flows:
 - name: 'Lab: Provision and tear down demo datacenter'
-  description: Build the FRR lab image, deploy the 4-router containerlab full mesh, attach the lab network to the workers,
-    and optionally stand up Gitea; then hold at an approval gate (no expiry) so you can interact with the lab. Approve to
-    tear it down, reject to leave it running.
+  description: Build the FRR lab image, deploy the 8-router multi-area OSPF lab (dc1 + two branches), attach the lab network
+    to the workers, and optionally stand up Gitea; then hold at an approval gate (no expiry) so you can interact with the
+    lab. Approve to tear it down, reject to leave it running.
   definition:
     graph:
       nodes:
@@ -541,7 +541,7 @@ flows:
         position_x: 620
         position_y: 200
       - id: deploy_lab
-        name: Deploy containerlab full mesh
+        name: Deploy containerlab multi-area lab
         type: step
         kind: EXECUTE
         phase: IMPLEMENTATION
@@ -610,10 +610,11 @@ flows:
           network_mode: host
           timeout_seconds: 180
           command:
-          - "set -e\nfor r in r1 r2 r3 r4; do\n  C=\"clab-meridian-lab-$r\"\n  echo \"--- waiting for ${C} ---\"\n  for i\
-            \ in $(seq 1 30); do\n    if docker exec \"$C\" vtysh -c 'show version' >/dev/null 2>&1; then\n      echo \"ready:\
-            \ $r (attempt $i)\"\n      break\n    fi\n    sleep 2\n    if [ \"$i\" = \"30\" ]; then\n      echo \"TIMEOUT\
-            \ waiting for $r\" >&2\n      exit 1\n    fi\n  done\ndone\necho \"All four routers are answering vtysh.\"\n"
+          - "set -e\nfor r in dc1-core-01 dc1-core-02 dc1-acc-01 dc1-acc-02 \\\n         br1-edge-01 br1-acc-01 br2-edge-01\
+            \ br2-acc-01; do\n  C=\"clab-meridian-lab-$r\"\n  echo \"--- waiting for ${C} ---\"\n  for i in $(seq 1 30); do\n\
+            \    if docker exec \"$C\" vtysh -c 'show version' >/dev/null 2>&1; then\n      echo \"ready: $r (attempt $i)\"\
+            \n      break\n    fi\n    sleep 2\n    if [ \"$i\" = \"30\" ]; then\n      echo \"TIMEOUT waiting for $r\" >&2\n\
+            \      exit 1\n    fi\n  done\ndone\necho \"All four routers are answering vtysh.\"\n"
         policy:
           timeout_sec: 240
           retries: 0
@@ -662,9 +663,9 @@ flows:
         position_y: 200
         params:
           title: Demo datacenter is up — approve to tear it down
-          message: The lab is running. SSH to the routers at 172.20.30.11-14 (user clab) and exercise the Ops/Net flows against
-            them; browse Gitea at http://localhost:3000 if deployed. This gate never expires. APPROVE to tear the lab down
-            and clean the host; REJECT to leave it running.
+          message: 'The lab is running: 8 routers in 172.20.30.0/24 (dc1 cores+access .11-.14, br1 .21-.22, br2 .31-.32; user
+            clab). Exercise the Ops/Net flows against them; browse Gitea at http://localhost:3000 if deployed. This gate never
+            expires. APPROVE to tear the lab down and clean the host; REJECT to leave it running.'
       - id: teardown
         name: Destroy lab and Gitea
         type: step
@@ -1281,19 +1282,23 @@ flows:
         data:
           label: OSPF area
           field_id: ospf_area
-          field_type: core.text
+          field_type: core.enum
           required: false
           default_value: '0'
-          description: OSPF area to advertise into (shown only when advertising).
+          description: 'OSPF area to advertise into (shown only when advertising). The lab runs multi-area OSPF: pick the
+            area the target routers participate in.'
           config:
-            validations:
-              combinator: AND
-              children:
-              - id: v_area
-                op: regex
-                operand:
-                  kind: value
-                  value: ^[0-9.]+$
+            option_source:
+              kind: core.static
+              static_options:
+              - value: '0'
+                label: Area 0 (backbone)
+              - value: '1'
+                label: Area 1 (Lab DC1)
+              - value: '2'
+                label: Area 2 (Lab Branch 1)
+              - value: '3'
+                label: Area 3 (Lab Branch 2)
       - id: sec_change
         kind: section
         position_x: 1200
@@ -1510,21 +1515,33 @@ flow_attachments:
 - flow: 'Lab: Provision and tear down demo datacenter'
   filename: topology.clab.yml
   content: "# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>\n# SPDX-License-Identifier: AGPL-3.0-or-later\n\
-    #\n# Four FRR routers in a full mesh (6 point-to-point links), each with a static\n# management address on a fixed subnet\
-    \ so the seeded Git inventory can target\n# them by mgmt_host. The __HEGEMONY_CLAB_*__ placeholders are substituted by\n\
-    # the Bootstrap flow at deploy time (see the flow's deploy step) so the bind\n# sources resolve identically inside the\
-    \ orchestrator container and on the host\n# Docker daemon that actually creates the router containers.\nname: __HEGEMONY_CLAB_NAME__\n\
-    \nmgmt:\n  network: meridian-lab-mgmt\n  ipv4-subnet: 172.20.30.0/24\n\ntopology:\n  kinds:\n    linux:\n      image:\
-    \ meridian/frr-lab:latest\n      # Shared FRR daemons file (zebra + ospfd); per-router frr.conf is bound\n      # per\
-    \ node below.\n      binds:\n        - __HEGEMONY_CLAB_WORKDIR__/frr/daemons:/etc/frr/daemons\n        - __HEGEMONY_CLAB_WORKDIR__/frr/vtysh.conf:/etc/frr/vtysh.conf\n\
-    \  nodes:\n    r1:\n      kind: linux\n      mgmt-ipv4: 172.20.30.11\n      binds:\n        - __HEGEMONY_CLAB_WORKDIR__/frr/r1.conf:/etc/frr/frr.conf\n\
-    \    r2:\n      kind: linux\n      mgmt-ipv4: 172.20.30.12\n      binds:\n        - __HEGEMONY_CLAB_WORKDIR__/frr/r2.conf:/etc/frr/frr.conf\n\
-    \    r3:\n      kind: linux\n      mgmt-ipv4: 172.20.30.13\n      binds:\n        - __HEGEMONY_CLAB_WORKDIR__/frr/r3.conf:/etc/frr/frr.conf\n\
-    \    r4:\n      kind: linux\n      mgmt-ipv4: 172.20.30.14\n      binds:\n        - __HEGEMONY_CLAB_WORKDIR__/frr/r4.conf:/etc/frr/frr.conf\n\
-    \  links:\n    - endpoints: [\"r1:eth1\", \"r2:eth1\"]   # 10.0.12.0/30\n    - endpoints: [\"r1:eth2\", \"r3:eth1\"] \
-    \  # 10.0.13.0/30\n    - endpoints: [\"r1:eth3\", \"r4:eth1\"]   # 10.0.14.0/30\n    - endpoints: [\"r2:eth2\", \"r3:eth2\"\
-    ]   # 10.0.23.0/30\n    - endpoints: [\"r2:eth3\", \"r4:eth2\"]   # 10.0.24.0/30\n    - endpoints: [\"r3:eth3\", \"r4:eth3\"\
-    ]   # 10.0.34.0/30\n"
+    #\n# Meridian virtual lab: eight FRR routers across three lab sites running\n# multi-area OSPF.\n#\n#   dc1 (area 1):\
+    \ dc1-core-01/02 are ABRs on the area-0 backbone; the two\n#                 access routers are dual-homed to both cores.\n\
+    #   br1 (area 2): br1-edge-01 is an ABR, dual-homed to both cores over area 0.\n#   br2 (area 3): br2-edge-01 likewise.\n\
+    #\n# Every router has a static management address on a fixed subnet so the seeded\n# Git inventory (demo-inventory/) can\
+    \ target it by mgmt_host:\n#   dc1: .11-.14   br1: .21-.22   br2: .31-.32\n#\n# The __HEGEMONY_CLAB_*__ placeholders are\
+    \ substituted by the Bootstrap flow at\n# deploy time so the bind sources resolve identically inside the orchestrator\n\
+    # container and on the host Docker daemon that creates the router containers.\nname: __HEGEMONY_CLAB_NAME__\n\nmgmt:\n\
+    \  network: meridian-lab-mgmt\n  ipv4-subnet: 172.20.30.0/24\n\ntopology:\n  kinds:\n    linux:\n      image: meridian/frr-lab:latest\n\
+    \      # Shared FRR daemons file (zebra + ospfd); per-router frr.conf is bound\n      # per node below.\n      binds:\n\
+    \        - __HEGEMONY_CLAB_WORKDIR__/frr/daemons:/etc/frr/daemons\n        - __HEGEMONY_CLAB_WORKDIR__/frr/vtysh.conf:/etc/frr/vtysh.conf\n\
+    \  nodes:\n    dc1-core-01:\n      kind: linux\n      mgmt-ipv4: 172.20.30.11\n      binds:\n        - __HEGEMONY_CLAB_WORKDIR__/frr/dc1-core-01.conf:/etc/frr/frr.conf\n\
+    \    dc1-core-02:\n      kind: linux\n      mgmt-ipv4: 172.20.30.12\n      binds:\n        - __HEGEMONY_CLAB_WORKDIR__/frr/dc1-core-02.conf:/etc/frr/frr.conf\n\
+    \    dc1-acc-01:\n      kind: linux\n      mgmt-ipv4: 172.20.30.13\n      binds:\n        - __HEGEMONY_CLAB_WORKDIR__/frr/dc1-acc-01.conf:/etc/frr/frr.conf\n\
+    \    dc1-acc-02:\n      kind: linux\n      mgmt-ipv4: 172.20.30.14\n      binds:\n        - __HEGEMONY_CLAB_WORKDIR__/frr/dc1-acc-02.conf:/etc/frr/frr.conf\n\
+    \    br1-edge-01:\n      kind: linux\n      mgmt-ipv4: 172.20.30.21\n      binds:\n        - __HEGEMONY_CLAB_WORKDIR__/frr/br1-edge-01.conf:/etc/frr/frr.conf\n\
+    \    br1-acc-01:\n      kind: linux\n      mgmt-ipv4: 172.20.30.22\n      binds:\n        - __HEGEMONY_CLAB_WORKDIR__/frr/br1-acc-01.conf:/etc/frr/frr.conf\n\
+    \    br2-edge-01:\n      kind: linux\n      mgmt-ipv4: 172.20.30.31\n      binds:\n        - __HEGEMONY_CLAB_WORKDIR__/frr/br2-edge-01.conf:/etc/frr/frr.conf\n\
+    \    br2-acc-01:\n      kind: linux\n      mgmt-ipv4: 172.20.30.32\n      binds:\n        - __HEGEMONY_CLAB_WORKDIR__/frr/br2-acc-01.conf:/etc/frr/frr.conf\n\
+    \  links:\n    # Area 0 backbone\n    - endpoints: [\"dc1-core-01:eth1\", \"dc1-core-02:eth1\"]   # 10.0.0.0/30\n    -\
+    \ endpoints: [\"dc1-core-01:eth2\", \"br1-edge-01:eth1\"]   # 10.0.1.0/30\n    - endpoints: [\"dc1-core-02:eth2\", \"\
+    br1-edge-01:eth2\"]   # 10.0.2.0/30\n    - endpoints: [\"dc1-core-01:eth3\", \"br2-edge-01:eth1\"]   # 10.0.3.0/30\n \
+    \   - endpoints: [\"dc1-core-02:eth3\", \"br2-edge-01:eth2\"]   # 10.0.4.0/30\n    # Area 1 (dc1 access, dual-homed)\n\
+    \    - endpoints: [\"dc1-core-01:eth4\", \"dc1-acc-01:eth1\"]    # 10.1.1.0/30\n    - endpoints: [\"dc1-core-02:eth4\"\
+    , \"dc1-acc-01:eth2\"]    # 10.1.2.0/30\n    - endpoints: [\"dc1-core-01:eth5\", \"dc1-acc-02:eth1\"]    # 10.1.3.0/30\n\
+    \    - endpoints: [\"dc1-core-02:eth5\", \"dc1-acc-02:eth2\"]    # 10.1.4.0/30\n    # Area 2 (br1) / Area 3 (br2)\n  \
+    \  - endpoints: [\"br1-edge-01:eth3\", \"br1-acc-01:eth1\"]    # 10.2.1.0/30\n    - endpoints: [\"br2-edge-01:eth3\",\
+    \ \"br2-acc-01:eth1\"]    # 10.3.1.0/30\n"
 - flow: 'Lab: Provision and tear down demo datacenter'
   filename: frr/daemons
   content: '# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
@@ -1613,33 +1630,59 @@ flow_attachments:
 
     '
 - flow: 'Lab: Provision and tear down demo datacenter'
-  filename: frr/r1.conf
-  content: "frr version 9.1\nfrr defaults traditional\nhostname lab-r1\nservice integrated-vtysh-config\n!\ninterface lo\n\
-    \ ip address 10.255.255.1/32\n!\ninterface eth1\n description to-lab-r2\n ip address 10.0.12.1/30\n!\ninterface eth2\n\
-    \ description to-lab-r3\n ip address 10.0.13.1/30\n!\ninterface eth3\n description to-lab-r4\n ip address 10.0.14.1/30\n\
-    !\nrouter ospf\n ospf router-id 10.255.255.1\n network 10.0.12.0/30 area 0\n network 10.0.13.0/30 area 0\n network 10.0.14.0/30\
-    \ area 0\n network 10.255.255.1/32 area 0\n!\n"
+  filename: frr/dc1-core-01.conf
+  content: "frr version 9.1\nfrr defaults traditional\nhostname dc1-core-01\nservice integrated-vtysh-config\n!\ninterface\
+    \ lo\n ip address 10.255.255.1/32\n!\ninterface eth1\n description to-dc1-core-02\n ip address 10.0.0.1/30\n!\ninterface\
+    \ eth2\n description to-br1-edge-01\n ip address 10.0.1.1/30\n!\ninterface eth3\n description to-br2-edge-01\n ip address\
+    \ 10.0.3.1/30\n!\ninterface eth4\n description to-dc1-acc-01\n ip address 10.1.1.1/30\n!\ninterface eth5\n description\
+    \ to-dc1-acc-02\n ip address 10.1.3.1/30\n!\nrouter ospf\n ospf router-id 10.255.255.1\n network 10.255.255.1/32 area\
+    \ 0\n network 10.0.0.0/30 area 0\n network 10.0.1.0/30 area 0\n network 10.0.3.0/30 area 0\n network 10.1.1.0/30 area\
+    \ 1\n network 10.1.3.0/30 area 1\n!\n"
 - flow: 'Lab: Provision and tear down demo datacenter'
-  filename: frr/r2.conf
-  content: "frr version 9.1\nfrr defaults traditional\nhostname lab-r2\nservice integrated-vtysh-config\n!\ninterface lo\n\
-    \ ip address 10.255.255.2/32\n!\ninterface eth1\n description to-lab-r1\n ip address 10.0.12.2/30\n!\ninterface eth2\n\
-    \ description to-lab-r3\n ip address 10.0.23.1/30\n!\ninterface eth3\n description to-lab-r4\n ip address 10.0.24.1/30\n\
-    !\nrouter ospf\n ospf router-id 10.255.255.2\n network 10.0.12.0/30 area 0\n network 10.0.23.0/30 area 0\n network 10.0.24.0/30\
-    \ area 0\n network 10.255.255.2/32 area 0\n!\n"
+  filename: frr/dc1-core-02.conf
+  content: "frr version 9.1\nfrr defaults traditional\nhostname dc1-core-02\nservice integrated-vtysh-config\n!\ninterface\
+    \ lo\n ip address 10.255.255.2/32\n!\ninterface eth1\n description to-dc1-core-01\n ip address 10.0.0.2/30\n!\ninterface\
+    \ eth2\n description to-br1-edge-01\n ip address 10.0.2.1/30\n!\ninterface eth3\n description to-br2-edge-01\n ip address\
+    \ 10.0.4.1/30\n!\ninterface eth4\n description to-dc1-acc-01\n ip address 10.1.2.1/30\n!\ninterface eth5\n description\
+    \ to-dc1-acc-02\n ip address 10.1.4.1/30\n!\nrouter ospf\n ospf router-id 10.255.255.2\n network 10.255.255.2/32 area\
+    \ 0\n network 10.0.0.0/30 area 0\n network 10.0.2.0/30 area 0\n network 10.0.4.0/30 area 0\n network 10.1.2.0/30 area\
+    \ 1\n network 10.1.4.0/30 area 1\n!\n"
 - flow: 'Lab: Provision and tear down demo datacenter'
-  filename: frr/r3.conf
-  content: "frr version 9.1\nfrr defaults traditional\nhostname lab-r3\nservice integrated-vtysh-config\n!\ninterface lo\n\
-    \ ip address 10.255.255.3/32\n!\ninterface eth1\n description to-lab-r1\n ip address 10.0.13.2/30\n!\ninterface eth2\n\
-    \ description to-lab-r2\n ip address 10.0.23.2/30\n!\ninterface eth3\n description to-lab-r4\n ip address 10.0.34.1/30\n\
-    !\nrouter ospf\n ospf router-id 10.255.255.3\n network 10.0.13.0/30 area 0\n network 10.0.23.0/30 area 0\n network 10.0.34.0/30\
-    \ area 0\n network 10.255.255.3/32 area 0\n!\n"
+  filename: frr/dc1-acc-01.conf
+  content: "frr version 9.1\nfrr defaults traditional\nhostname dc1-acc-01\nservice integrated-vtysh-config\n!\ninterface\
+    \ lo\n ip address 10.255.255.5/32\n!\ninterface eth1\n description to-dc1-core-01\n ip address 10.1.1.2/30\n!\ninterface\
+    \ eth2\n description to-dc1-core-02\n ip address 10.1.2.2/30\n!\nrouter ospf\n ospf router-id 10.255.255.5\n network 10.255.255.5/32\
+    \ area 1\n network 10.1.1.0/30 area 1\n network 10.1.2.0/30 area 1\n!\n"
 - flow: 'Lab: Provision and tear down demo datacenter'
-  filename: frr/r4.conf
-  content: "frr version 9.1\nfrr defaults traditional\nhostname lab-r4\nservice integrated-vtysh-config\n!\ninterface lo\n\
-    \ ip address 10.255.255.4/32\n!\ninterface eth1\n description to-lab-r1\n ip address 10.0.14.2/30\n!\ninterface eth2\n\
-    \ description to-lab-r2\n ip address 10.0.24.2/30\n!\ninterface eth3\n description to-lab-r3\n ip address 10.0.34.2/30\n\
-    !\nrouter ospf\n ospf router-id 10.255.255.4\n network 10.0.14.0/30 area 0\n network 10.0.24.0/30 area 0\n network 10.0.34.0/30\
-    \ area 0\n network 10.255.255.4/32 area 0\n!\n"
+  filename: frr/dc1-acc-02.conf
+  content: "frr version 9.1\nfrr defaults traditional\nhostname dc1-acc-02\nservice integrated-vtysh-config\n!\ninterface\
+    \ lo\n ip address 10.255.255.6/32\n!\ninterface eth1\n description to-dc1-core-01\n ip address 10.1.3.2/30\n!\ninterface\
+    \ eth2\n description to-dc1-core-02\n ip address 10.1.4.2/30\n!\nrouter ospf\n ospf router-id 10.255.255.6\n network 10.255.255.6/32\
+    \ area 1\n network 10.1.3.0/30 area 1\n network 10.1.4.0/30 area 1\n!\n"
+- flow: 'Lab: Provision and tear down demo datacenter'
+  filename: frr/br1-edge-01.conf
+  content: "frr version 9.1\nfrr defaults traditional\nhostname br1-edge-01\nservice integrated-vtysh-config\n!\ninterface\
+    \ lo\n ip address 10.255.255.3/32\n!\ninterface eth1\n description to-dc1-core-01\n ip address 10.0.1.2/30\n!\ninterface\
+    \ eth2\n description to-dc1-core-02\n ip address 10.0.2.2/30\n!\ninterface eth3\n description to-br1-acc-01\n ip address\
+    \ 10.2.1.1/30\n!\nrouter ospf\n ospf router-id 10.255.255.3\n network 10.255.255.3/32 area 0\n network 10.0.1.0/30 area\
+    \ 0\n network 10.0.2.0/30 area 0\n network 10.2.1.0/30 area 2\n!\n"
+- flow: 'Lab: Provision and tear down demo datacenter'
+  filename: frr/br1-acc-01.conf
+  content: "frr version 9.1\nfrr defaults traditional\nhostname br1-acc-01\nservice integrated-vtysh-config\n!\ninterface\
+    \ lo\n ip address 10.255.255.7/32\n!\ninterface eth1\n description to-br1-edge-01\n ip address 10.2.1.2/30\n!\nrouter\
+    \ ospf\n ospf router-id 10.255.255.7\n network 10.255.255.7/32 area 2\n network 10.2.1.0/30 area 2\n!\n"
+- flow: 'Lab: Provision and tear down demo datacenter'
+  filename: frr/br2-edge-01.conf
+  content: "frr version 9.1\nfrr defaults traditional\nhostname br2-edge-01\nservice integrated-vtysh-config\n!\ninterface\
+    \ lo\n ip address 10.255.255.4/32\n!\ninterface eth1\n description to-dc1-core-01\n ip address 10.0.3.2/30\n!\ninterface\
+    \ eth2\n description to-dc1-core-02\n ip address 10.0.4.2/30\n!\ninterface eth3\n description to-br2-acc-01\n ip address\
+    \ 10.3.1.1/30\n!\nrouter ospf\n ospf router-id 10.255.255.4\n network 10.255.255.4/32 area 0\n network 10.0.3.0/30 area\
+    \ 0\n network 10.0.4.0/30 area 0\n network 10.3.1.0/30 area 3\n!\n"
+- flow: 'Lab: Provision and tear down demo datacenter'
+  filename: frr/br2-acc-01.conf
+  content: "frr version 9.1\nfrr defaults traditional\nhostname br2-acc-01\nservice integrated-vtysh-config\n!\ninterface\
+    \ lo\n ip address 10.255.255.8/32\n!\ninterface eth1\n description to-br2-edge-01\n ip address 10.3.1.2/30\n!\nrouter\
+    \ ospf\n ospf router-id 10.255.255.8\n network 10.255.255.8/32 area 3\n network 10.3.1.0/30 area 3\n!\n"
 - flow: 'Lab: Provision and tear down demo datacenter'
   filename: seed.sh
   content: "#!/bin/sh\n# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>\n# SPDX-License-Identifier:\

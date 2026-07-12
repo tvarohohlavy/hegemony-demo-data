@@ -23,9 +23,10 @@ appears as part of a story rather than a feature checklist:
   environments, and step output, including a nested `{{ vars.* }}` reference.
 - **Secrets** — vault-backed SSH credentials for the estate and the lab routers,
   Gitea credentials, webhook HMAC material, and Shoutrrr URLs.
-- **Git repositories & the git inventory provider** — the four lab routers are
-  defined in [`demo-inventory/`](demo-inventory) and synced into Hegemony by a
-  Git inventory provider that reads this public repository over HTTPS.
+- **Git repositories & the git inventory provider** — the eight lab routers and
+  their three-site hierarchy (datacenter + two branches) are defined in
+  [`demo-inventory/`](demo-inventory) and synced into Hegemony by a Git
+  inventory provider that reads this public repository over HTTPS.
 - **Flow forms** — every flow ships a launch form (`interface_graph`). "Ops:
   Announce service prefix" is the flagship: it exercises number/text/bool/enum
   fields, cross-field templated defaults, input validation, a conditional
@@ -35,7 +36,8 @@ appears as part of a story rather than a feature checklist:
   virtual lab (containerlab + FRR) the device flows run against for real.
 
 Start by running **"Lab: Provision and tear down demo datacenter"** — it builds
-the lab image, deploys the four-router topology, attaches the lab network to the
+the lab image, deploys an eight-router multi-area OSPF topology (a lab
+datacenter with backbone ABRs plus two branches), attaches the lab network to the
 workers, and (optionally) stands up a local Gitea for config backups, then parks
 on an approval gate **with no expiry**. While the run is held there the lab keeps
 running, so you can SSH to the routers and exercise the other flows against them;

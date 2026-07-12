@@ -3,10 +3,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 # A single long-running lifecycle flow for the self-contained demo datacenter.
-# It builds an FRR+sshd image, deploys a four-router containerlab full mesh with
-# fixed management addresses, attaches the lab management network to the
-# Hegemony workers (so the seeded inventory becomes reachable), and optionally
-# stands up a local Gitea for config backups. It then PARKS on an approval gate
+# It builds an FRR+sshd image, deploys an eight-router multi-area OSPF lab
+# (datacenter dc1 with backbone ABRs + two branches, see
+# src/files/lab/topology.clab.yml) with fixed management addresses, attaches
+# the lab management network to the Hegemony workers (so the seeded inventory
+# becomes reachable), and optionally stands up a local Gitea for config
+# backups. It then PARKS on an approval gate
 # WITH NO EXPIRY: the run stays paused — the lab keeps running on the host —
 # while you SSH to the routers and exercise the other flows against them.
 # Approving the gate tears the lab down; rejecting leaves it running. This is
@@ -18,10 +20,11 @@ schema_version: 2
 flows:
   - name: "Lab: Provision and tear down demo datacenter"
     description: >-
-      Build the FRR lab image, deploy the 4-router containerlab full mesh,
-      attach the lab network to the workers, and optionally stand up Gitea; then
-      hold at an approval gate (no expiry) so you can interact with the lab.
-      Approve to tear it down, reject to leave it running.
+      Build the FRR lab image, deploy the 8-router multi-area OSPF lab (dc1 +
+      two branches), attach the lab network to the workers, and optionally
+      stand up Gitea; then hold at an approval gate (no expiry) so you can
+      interact with the lab. Approve to tear it down, reject to leave it
+      running.
     definition:
       graph:
         nodes:
@@ -71,7 +74,7 @@ flows:
             position_x: 620
             position_y: 200
           - id: deploy_lab
-            name: Deploy containerlab full mesh
+            name: Deploy containerlab multi-area lab
             type: step
             kind: EXECUTE
             phase: IMPLEMENTATION
@@ -159,7 +162,8 @@ flows:
               command:
                 - |
                   set -e
-                  for r in r1 r2 r3 r4; do
+                  for r in dc1-core-01 dc1-core-02 dc1-acc-01 dc1-acc-02 \
+                           br1-edge-01 br1-acc-01 br2-edge-01 br2-acc-01; do
                     C="clab-meridian-lab-$r"
                     echo "--- waiting for ${C} ---"
                     for i in $(seq 1 30); do
@@ -237,11 +241,11 @@ flows:
             params:
               title: "Demo datacenter is up — approve to tear it down"
               message: >-
-                The lab is running. SSH to the routers at 172.20.30.11-14 (user
-                clab) and exercise the Ops/Net flows against them; browse Gitea at
-                http://localhost:3000 if deployed. This gate never expires.
-                APPROVE to tear the lab down and clean the host; REJECT to leave
-                it running.
+                The lab is running: 8 routers in 172.20.30.0/24 (dc1 cores+access
+                .11-.14, br1 .21-.22, br2 .31-.32; user clab). Exercise the
+                Ops/Net flows against them; browse Gitea at http://localhost:3000
+                if deployed. This gate never expires. APPROVE to tear the lab
+                down and clean the host; REJECT to leave it running.
           - id: teardown
             name: Destroy lab and Gitea
             type: step
@@ -442,17 +446,29 @@ flow_attachments:
     filename: frr/vtysh.conf
     content_file: src/files/lab/frr/vtysh.conf
   - flow: "Lab: Provision and tear down demo datacenter"
-    filename: frr/r1.conf
-    content_file: src/files/lab/frr/r1.conf
+    filename: frr/dc1-core-01.conf
+    content_file: src/files/lab/frr/dc1-core-01.conf
   - flow: "Lab: Provision and tear down demo datacenter"
-    filename: frr/r2.conf
-    content_file: src/files/lab/frr/r2.conf
+    filename: frr/dc1-core-02.conf
+    content_file: src/files/lab/frr/dc1-core-02.conf
   - flow: "Lab: Provision and tear down demo datacenter"
-    filename: frr/r3.conf
-    content_file: src/files/lab/frr/r3.conf
+    filename: frr/dc1-acc-01.conf
+    content_file: src/files/lab/frr/dc1-acc-01.conf
   - flow: "Lab: Provision and tear down demo datacenter"
-    filename: frr/r4.conf
-    content_file: src/files/lab/frr/r4.conf
+    filename: frr/dc1-acc-02.conf
+    content_file: src/files/lab/frr/dc1-acc-02.conf
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: frr/br1-edge-01.conf
+    content_file: src/files/lab/frr/br1-edge-01.conf
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: frr/br1-acc-01.conf
+    content_file: src/files/lab/frr/br1-acc-01.conf
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: frr/br2-edge-01.conf
+    content_file: src/files/lab/frr/br2-edge-01.conf
+  - flow: "Lab: Provision and tear down demo datacenter"
+    filename: frr/br2-acc-01.conf
+    content_file: src/files/lab/frr/br2-acc-01.conf
   - flow: "Lab: Provision and tear down demo datacenter"
     filename: seed.sh
     content_file: src/files/gitea/seed.sh

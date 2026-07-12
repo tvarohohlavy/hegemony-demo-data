@@ -514,19 +514,25 @@ flows:
             data:
               label: OSPF area
               field_id: ospf_area
-              field_type: core.text
+              field_type: core.enum
               required: false
               default_value: "0"
-              description: OSPF area to advertise into (shown only when advertising).
+              description: >-
+                OSPF area to advertise into (shown only when advertising). The
+                lab runs multi-area OSPF: pick the area the target routers
+                participate in.
               config:
-                validations:
-                  combinator: AND
-                  children:
-                    - id: v_area
-                      op: regex
-                      operand:
-                        kind: value
-                        value: "^[0-9.]+$"
+                option_source:
+                  kind: core.static
+                  static_options:
+                    - value: "0"
+                      label: Area 0 (backbone)
+                    - value: "1"
+                      label: Area 1 (Lab DC1)
+                    - value: "2"
+                      label: Area 2 (Lab Branch 1)
+                    - value: "3"
+                      label: Area 3 (Lab Branch 2)
           - id: sec_change
             kind: section
             position_x: 1200

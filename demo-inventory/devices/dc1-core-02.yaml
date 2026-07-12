@@ -2,17 +2,20 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 schema_version: 1
 kind: device
-external_id: lab-r4
-name: lab-r4
-mgmt_host: 172.20.30.14
+external_id: dc1-core-02
+name: dc1-core-02
+mgmt_host: 172.20.30.12
 mgmt_port: 22
 platform: ios-xe
 vendor: FRRouting
 model: frr-lab
-site: virtual-lab
-role: lab-router
+site: virtual-lab/dc1
+role: core
 tags:
   - lab
   - frr
+  - core
 custom_fields:
-  ospf_router_id: 10.255.255.4
+  ospf_area: "0/1"
+  ospf_router_id: 10.255.255.2
+  description: Backbone ABR (areas 0+1)

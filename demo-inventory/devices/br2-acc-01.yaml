@@ -2,17 +2,20 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 schema_version: 1
 kind: device
-external_id: lab-r3
-name: lab-r3
-mgmt_host: 172.20.30.13
+external_id: br2-acc-01
+name: br2-acc-01
+mgmt_host: 172.20.30.32
 mgmt_port: 22
 platform: ios-xe
 vendor: FRRouting
 model: frr-lab
-site: virtual-lab
-role: lab-router
+site: virtual-lab/br2
+role: access
 tags:
   - lab
   - frr
+  - access
 custom_fields:
-  ospf_router_id: 10.255.255.3
+  ospf_area: "3"
+  ospf_router_id: 10.255.255.8
+  description: Branch access router
