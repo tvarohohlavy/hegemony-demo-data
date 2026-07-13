@@ -1556,8 +1556,8 @@ flows:
           fail_fast: true
           command_timeout_sec: 120
           commands:
-          - "FAIL=0\nfor t in {{ inputs.ping_targets | join(' ') }}; do\n  echo \"--- ping $t ---\"\n  ping -c 3 -W 2 \"$t\"\
-            \ || FAIL=1\ndone\nexit $FAIL\n"
+          - FAIL=0; for t in {{ inputs.ping_targets | join(" ") }}; do echo "--- ping $t ---"; ping -c 3 -W 2 "$t" || FAIL=1;
+            done; exit $FAIL
         policy:
           timeout_sec: 180
           retries: 0

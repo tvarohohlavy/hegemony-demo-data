@@ -790,14 +790,11 @@ flows:
               shell: sh
               fail_fast: true
               command_timeout_sec: 120
+              # shell.execute runs ONE command per line (multi-line scripts are
+              # split into separate exec channels at render time), so the ping
+              # sweep must stay a single line.
               commands:
-                - |
-                  FAIL=0
-                  for t in {{ inputs.ping_targets | join(' ') }}; do
-                    echo "--- ping $t ---"
-                    ping -c 3 -W 2 "$t" || FAIL=1
-                  done
-                  exit $FAIL
+                - 'FAIL=0; for t in {{ inputs.ping_targets | join(" ") }}; do echo "--- ping $t ---"; ping -c 3 -W 2 "$t" || FAIL=1; done; exit $FAIL'
             policy:
               timeout_sec: 180
               retries: 0
