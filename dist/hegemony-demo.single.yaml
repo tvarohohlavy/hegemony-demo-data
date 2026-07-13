@@ -461,6 +461,7 @@ git_repositories:
   url: http://host.docker.internal:3000/meridian/config-backups.git
   branch: main
   sync_stale_seconds: 60
+  allow_insecure_url: true
 inventory_providers:
 - name: lab-inventory
   provider_type: git

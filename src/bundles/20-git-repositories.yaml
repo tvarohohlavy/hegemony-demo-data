@@ -9,9 +9,9 @@
 #   * hegemony-demo-data — THIS public repository, whose demo-inventory/ tree
 #     is read by the "lab-inventory" git provider (25-inventory-providers.yaml).
 #   * config-backups — the demo Gitea repository the backup flow pushes to.
-#     It is http:// on the Docker host, so browsing it through the platform
-#     requires the demo stack's HEGEMONY_GIT_ALLOW_INSECURE_URLS=true opt-out
-#     (set by the demo compose overlay). The repository is public on the demo
+#     It is http:// on the Docker host, so this entry carries the per-repository
+#     allow_insecure_url opt-in (SSRF guard disabled for THIS repo only; every
+#     other repository stays protected). The repository is public on the demo
 #     Gitea, so it clones anonymously; it appears once "Lab: Provision and tear
 #     down demo datacenter" has stood Gitea up.
 #
@@ -30,3 +30,4 @@ git_repositories:
     url: "http://host.docker.internal:3000/meridian/config-backups.git"
     branch: main
     sync_stale_seconds: 60
+    allow_insecure_url: true
