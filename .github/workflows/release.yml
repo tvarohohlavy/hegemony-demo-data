@@ -57,9 +57,16 @@ jobs:
       # is self-identifying and pins the demo-data ref it installs to this tag.
       # Must run before checksums so the recorded digest matches the upload.
       - name: Stamp installer version
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          sed -i "s/^INSTALLER_VERSION=.*/INSTALLER_VERSION=${GITHUB_REF_NAME}/" install.sh
-          grep -q "^INSTALLER_VERSION=${GITHUB_REF_NAME}$" install.sh \
+          # Pass the tag as an awk variable (data), never interpolated into a
+          # sed/awk program, so ref characters like / & | can't corrupt it.
+          awk -v v="$REF_NAME" \
+            '/^INSTALLER_VERSION=/ { print "INSTALLER_VERSION=" v; next } { print }' \
+            install.sh > install.sh.stamped
+          mv install.sh.stamped install.sh
+          grep -Fqx "INSTALLER_VERSION=$REF_NAME" install.sh \
             || { echo "::error::failed to stamp INSTALLER_VERSION"; exit 1; }
           sh -n install.sh
 

@@ -28,12 +28,11 @@ v2026.07.01-2
 
 ## Before Tagging
 
-Run:
+Regenerate and verify the bundle:
 
 ```bash
 uv run python scripts/build.py
 uv run python scripts/build.py --check
-uv run python scripts/checksums.py > SHA256SUMS
 ```
 
 Also confirm `install.sh`'s `HEGEMONY_PLATFORM_REF` default points at the
@@ -41,8 +40,13 @@ platform release this demo bundle targets — that value is baked into the
 released installer. (`INSTALLER_VERSION` is stamped automatically; leave it as
 `main` in the repo.)
 
-Commit source changes and generated `dist/` changes together. `SHA256SUMS` is
-release output and is not committed.
+Commit source changes and generated `dist/` changes together.
+
+> **Note:** do not generate `SHA256SUMS` by hand here — the release workflow
+> produces it *after* stamping `install.sh`, so a checksum computed against the
+> unstamped (`INSTALLER_VERSION=main`) installer would not match the published
+> asset. `SHA256SUMS` is release output and is not committed. (`task checksums`
+> remains available for a local preview of the bundle digest.)
 
 ## Publishing
 

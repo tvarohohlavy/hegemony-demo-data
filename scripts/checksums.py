@@ -26,10 +26,11 @@ def main() -> int:
     if not files:
         raise FileNotFoundError(f"No releasable YAML bundles found in {DIST_DIR}")
 
-    # The installer is a released, versioned asset too.
+    # The installer is a mandatory released, versioned asset too.
     installer = ROOT / "install.sh"
-    if installer.is_file():
-        files.append(installer)
+    if not installer.is_file():
+        raise FileNotFoundError(f"Missing release installer: {installer}")
+    files.append(installer)
 
     for path in files:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()

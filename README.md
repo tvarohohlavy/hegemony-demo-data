@@ -42,6 +42,15 @@ curl -fsSL https://raw.githubusercontent.com/tvarohohlavy/hegemony-demo-data/mai
 The `https://hegemony.sh/install.sh` URL will front the latest release asset
 once the site is wired up.
 
+To verify the release asset against its published checksum before running it:
+
+```bash
+base=https://github.com/tvarohohlavy/hegemony-demo-data/releases/download/vX.Y.Z
+curl -fsSLO "$base/install.sh"
+curl -fsSL "$base/SHA256SUMS" | grep ' install.sh$' | sha256sum -c -
+sh install.sh
+```
+
 Because it clones the platform sources and pulls the container images, the
 machine running it needs:
 

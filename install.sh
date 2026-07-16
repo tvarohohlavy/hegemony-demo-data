@@ -79,9 +79,13 @@ Usage: install.sh [options]
 EOF
 }
 
-preflight() {
+# Needed just to clone the repositories (the --no-up path).
+preflight_git() {
   command -v git >/dev/null 2>&1 || err "git is required"
-  command -v curl >/dev/null 2>&1 || err "curl is required"
+}
+
+# Needed only to bring the stack up; skipped for --no-up.
+preflight_stack() {
   command -v docker >/dev/null 2>&1 \
     || err "docker is required — https://docs.docker.com/engine/install/"
   docker info >/dev/null 2>&1 \
@@ -155,7 +159,7 @@ main() {
   done
 
   log "installer version: $INSTALLER_VERSION"
-  preflight
+  preflight_git
 
   WORKSPACE=${HEGEMONY_DEMO_DIR:-./hegemony-demo}
   mkdir -p "$WORKSPACE"
@@ -173,6 +177,8 @@ main() {
     exit 0
   fi
 
+  # Stack prerequisites are only needed for the actual bring-up.
+  preflight_stack
   require_task
   check_ghcr_auth "$platform_dir"
 
