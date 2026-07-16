@@ -53,6 +53,23 @@ jobs:
       - name: Verify REUSE metadata
         run: uv run reuse lint
 
+      # Stamp the tag into the installer so the released, immutable install.sh
+      # is self-identifying and pins the demo-data ref it installs to this tag.
+      # Must run before checksums so the recorded digest matches the upload.
+      - name: Stamp installer version
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          # Pass the tag as an awk variable (data), never interpolated into a
+          # sed/awk program, so ref characters like / & | can't corrupt it.
+          awk -v v="$REF_NAME" \
+            '/^INSTALLER_VERSION=/ { print "INSTALLER_VERSION=" v; next } { print }' \
+            install.sh > install.sh.stamped
+          mv install.sh.stamped install.sh
+          grep -Fqx "INSTALLER_VERSION=$REF_NAME" install.sh \
+            || { echo "::error::failed to stamp INSTALLER_VERSION"; exit 1; }
+          sh -n install.sh
+
       - name: Generate checksums
         run: uv run python scripts/checksums.py > SHA256SUMS
 
@@ -67,9 +84,15 @@ jobs:
 
       - name: Publish GitHub Release assets
         run: |
-          gh release create "${GITHUB_REF_NAME}" dist/*.yaml SHA256SUMS \
+          gh release create "${GITHUB_REF_NAME}" dist/*.yaml install.sh SHA256SUMS \
             --title "${GITHUB_REF_NAME}" \
-            --notes "Hegemony demo instance bootstrap bundles for ${GITHUB_REF_NAME}." \
+            --notes "Hegemony demo instance bootstrap bundles and installer for ${GITHUB_REF_NAME}.
+
+          Install this exact version:
+
+              curl -fsSL https://github.com/tvarohohlavy/hegemony-demo-data/releases/download/${GITHUB_REF_NAME}/install.sh | sh
+
+          Verify assets against SHA256SUMS. See docs/release.md." \
             --verify-tag
         env:
           GH_TOKEN: ${{ github.token }}

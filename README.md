@@ -12,6 +12,70 @@ This repository owns source YAML fragments and committed generated single-YAML
 bundles. Hegemony can load the generated bundle through its generic instance
 bootstrap path by mounting `dist/` into the API container at `/bootstrap`.
 
+## Quickstart: one-command demo
+
+[`install.sh`](install.sh) brings the whole demo up with a single command. It
+clones the platform repository and this repository as siblings and runs the
+demo through the platform's own Taskfile, so the compose and Task definitions
+come straight from source (the application images are still pulled from
+`ghcr.io`) — nothing is vendored here.
+
+Each release publishes `install.sh` as an asset covered by `SHA256SUMS`. Pin
+the exact tag for an immutable, reproducible install (`install.sh --version`
+reports the version, and it installs the demo data it shipped with):
+
+```bash
+# exact release — recommended (immutable, reproducible)
+curl -fsSL https://github.com/tvarohohlavy/hegemony-demo-data/releases/download/vX.Y.Z/install.sh | sh
+```
+
+The `latest` alias always follows the newest release (convenient, but it moves
+as new releases ship), and `main` tracks the bleeding edge:
+
+```bash
+# newest release (floating alias)
+curl -fsSL https://github.com/tvarohohlavy/hegemony-demo-data/releases/latest/download/install.sh | sh
+# bleeding edge (installs main)
+curl -fsSL https://raw.githubusercontent.com/tvarohohlavy/hegemony-demo-data/main/install.sh | sh
+```
+
+The `https://hegemony.sh/install.sh` URL will front the latest release asset
+once the site is wired up.
+
+To verify the release asset against its published checksum before running it:
+
+```bash
+base=https://github.com/tvarohohlavy/hegemony-demo-data/releases/download/vX.Y.Z
+curl -fsSLO "$base/install.sh"
+curl -fsSL "$base/SHA256SUMS" | grep ' install.sh$' | sha256sum -c -
+sh install.sh
+```
+
+Because it downloads itself, clones the platform sources, and pulls the
+container images, the machine running it needs:
+
+- **curl**, to fetch the installer (and, for the verified flow, `SHA256SUMS`)
+- **git**, with read access to the platform repository
+- **docker** with the compose v2 plugin
+- **[go-task](https://taskfile.dev)** — the installer runs `task compose:demo:up`
+- docker **authenticated to `ghcr.io`** (`docker login ghcr.io`) so the images
+  can be pulled
+
+It installs into `./hegemony-demo/` (a `hegemony/` platform checkout beside a
+`hegemony-demo-data/` checkout) and starts the stack. The UI is at
+<http://localhost:8080> (`admin` / `hegemony`). Lifecycle afterward, from
+`hegemony-demo/hegemony/`:
+
+```bash
+task compose:demo:down     # stop, keep data
+task compose:demo:reset    # stop and wipe all data
+task compose:demo:logs     # follow logs
+```
+
+Useful overrides: `--platform-ref` / `HEGEMONY_PLATFORM_REF`,
+`--demo-ref` / `HEGEMONY_DEMO_REF`, `--dir` / `HEGEMONY_DEMO_DIR`, `--no-up`.
+Uninstall by tearing the stack down and removing `hegemony-demo/`.
+
 ## What the demo shows
 
 The data is built around a small set of network-operations use cases for a
@@ -128,9 +192,9 @@ Instance bootstrap is intentionally one-shot. To apply changed demo data, reset 
   repository the provider points at for the sync to succeed.
 - The `config-backups` git repository points at the demo Gitea over `http://`
   on the Docker host so operators can browse pushed backups in Hegemony's
-  repository browser. This needs `HEGEMONY_GIT_ALLOW_INSECURE_URLS=true` (the
-  demo compose overlay sets it) and only works after the lab bootstrap flow has
-  deployed Gitea.
+  repository browser. This needs the repository's per-repo `allow_insecure_url`
+  opt-in (the demo bundle sets it) and only works after the lab bootstrap flow
+  has deployed Gitea.
 - For reproducible installs, consume a tagged release of this repository (see
   [docs/release.md](docs/release.md)) instead of tracking `main`. Hegemony's
   CI pins a specific commit of this repository for its bundle contract check.
