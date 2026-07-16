@@ -51,9 +51,10 @@ curl -fsSL "$base/SHA256SUMS" | grep ' install.sh$' | sha256sum -c -
 sh install.sh
 ```
 
-Because it clones the platform sources and pulls the container images, the
-machine running it needs:
+Because it downloads itself, clones the platform sources, and pulls the
+container images, the machine running it needs:
 
+- **curl**, to fetch the installer (and, for the verified flow, `SHA256SUMS`)
 - **git**, with read access to the platform repository
 - **docker** with the compose v2 plugin
 - **[go-task](https://taskfile.dev)** — the installer runs `task compose:demo:up`

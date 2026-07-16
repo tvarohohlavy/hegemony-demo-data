@@ -136,8 +136,13 @@ require_task() {
 }
 
 check_ghcr_auth() { # $1=platform-dir
-  tag=$(sed -n 's/^HEGEMONY_IMAGE_TAG=//p' "$1/deploy/compose/.env.demo" | tail -n 1)
-  tag=${tag:-latest}
+  env_file="$1/deploy/compose/.env.demo"
+  # Fail loudly rather than silently falling back to a default tag: a missing
+  # file or absent pin means the platform checkout is wrong, not "use latest".
+  [ -f "$env_file" ] \
+    || err "expected $env_file in the platform checkout — is the platform ref correct?"
+  tag=$(sed -n 's/^HEGEMONY_IMAGE_TAG=//p' "$env_file" | tail -n 1)
+  [ -n "$tag" ] || err "HEGEMONY_IMAGE_TAG not found in $env_file"
   log "Verifying ghcr.io access ($AUTH_CHECK_IMAGE:$tag) ..."
   docker pull "$AUTH_CHECK_IMAGE:$tag" >/dev/null 2>&1 \
     || err "cannot pull $AUTH_CHECK_IMAGE:$tag — run 'docker login ghcr.io' with an account
