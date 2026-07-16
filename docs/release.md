@@ -36,16 +36,42 @@ uv run python scripts/build.py --check
 uv run python scripts/checksums.py > SHA256SUMS
 ```
 
+Also confirm `install.sh`'s `HEGEMONY_PLATFORM_REF` default points at the
+platform release this demo bundle targets — that value is baked into the
+released installer. (`INSTALLER_VERSION` is stamped automatically; leave it as
+`main` in the repo.)
+
 Commit source changes and generated `dist/` changes together. `SHA256SUMS` is
 release output and is not committed.
 
 ## Publishing
 
 Pushing a `v*` tag runs the release workflow. It verifies generated bundles,
-creates `SHA256SUMS`, and publishes a GitHub Release with:
+stamps the tag into `install.sh` (`INSTALLER_VERSION=<tag>`), creates
+`SHA256SUMS`, and publishes a GitHub Release with:
 
 - `dist/hegemony-demo.single.yaml`
+- `install.sh`
 - `SHA256SUMS`
+
+### The installer is a versioned release asset
+
+The stamped `install.sh` is self-identifying (`install.sh --version` prints the
+tag) and defaults its `--demo-ref` to that same tag, so a released installer
+reproducibly installs the demo data it shipped with. The **exact-tag** URL is
+immutable and reproducible:
+
+```bash
+curl -fsSL https://github.com/tvarohohlavy/hegemony-demo-data/releases/download/vX.Y.Z/install.sh | sh
+```
+
+The `releases/latest/download/install.sh` URL is a moving alias — convenient for
+always getting the newest release, but it changes as new releases ship, so it is
+not pinned. `main` (raw URL) stays `INSTALLER_VERSION=main` and tracks bleeding
+edge.
+
+`SHA256SUMS` covers `install.sh` as well as the bundle, so both can be verified
+before running.
 
 The repository can also be consumed directly by cloning a tag and mounting
 `dist/` into Hegemony's `/bootstrap` directory.

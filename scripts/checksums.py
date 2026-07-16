@@ -3,7 +3,11 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""Generate SHA256SUMS for releasable bundle assets."""
+"""Generate SHA256SUMS for releasable assets (bundles + the installer).
+
+Run this after any release-time stamping of install.sh so the recorded digest
+matches the asset that is actually uploaded.
+"""
 
 from __future__ import annotations
 
@@ -21,6 +25,11 @@ def main() -> int:
     files = sorted(DIST_DIR.glob("*.yaml"))
     if not files:
         raise FileNotFoundError(f"No releasable YAML bundles found in {DIST_DIR}")
+
+    # The installer is a released, versioned asset too.
+    installer = ROOT / "install.sh"
+    if installer.is_file():
+        files.append(installer)
 
     for path in files:
         digest = hashlib.sha256(path.read_bytes()).hexdigest()
