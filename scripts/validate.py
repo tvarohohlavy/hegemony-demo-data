@@ -80,6 +80,7 @@ class Validator:
         self.errors.append(f"{self.bundle_id}: {message}")
 
     def validate(self) -> list[str]:
+        self._validate_organization()
         self._validate_unique_names()
         site_paths = self._validate_sites()
         flow_names = self._names("flows")
@@ -143,6 +144,39 @@ class Validator:
             if isinstance(parent, str) and parent not in paths:
                 self.error(f"site {name!r} references missing parent {parent!r}")
         return paths
+
+    def _validate_organization(self) -> None:
+        """Org-namespaced secret folders must match the bundle's organization.
+
+        A bundle that declares ``organization: <slug>`` binds every resource
+        to that org on import; a secret folder under another org's
+        ``orgs/<other>/…`` namespace would be rejected (or worse, confusing)
+        at import time, so catch the mismatch at build time.
+        """
+        organization = self.bundle.get("organization")
+        if organization is not None and (
+            not isinstance(organization, str) or not organization
+        ):
+            self.error("organization must be a non-empty slug")
+            return
+        for entry in self.bundle.get("organizations") or []:
+            if not isinstance(entry, dict) or not entry.get("slug") or not entry.get("name"):
+                self.error("organizations entries require slug and name")
+        if not isinstance(organization, str):
+            return
+        expected_prefix = f"orgs/{organization}/"
+        for secret in self._items("secrets"):
+            folder = secret.get("folder")
+            if not isinstance(folder, str):
+                continue
+            normalized = folder.strip("/")
+            if normalized.startswith("orgs/") and not (normalized + "/").startswith(
+                expected_prefix
+            ):
+                self.error(
+                    f"secret {secret.get('name')!r} folder {folder!r} is outside the "
+                    f"bundle organization namespace {expected_prefix!r}"
+                )
 
     def _validate_secret_paths(self) -> set[str]:
         paths: set[str] = set()

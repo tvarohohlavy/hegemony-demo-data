@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Multi-tenancy binding for the demo bundle.
+#
+# `organization` names the org (slug) every resource section in this bundle
+# belongs to: the platform binds the whole import to it, so the demo lands in
+# the default org deterministically instead of whichever org the importing
+# request happens to resolve. All demo secret folders are namespaced under
+# orgs/default/... to match.
+#
+# `organizations` is the platform org directory (upserted by slug before any
+# resources are applied). The entry below mirrors the org a fresh instance
+# seeds, so importing it is a no-op there — it exists so the bundle is
+# self-contained on instances where the default org was renamed or disabled.
+schema_version: 2
+
+organization: default
+
+organizations:
+  - slug: default
+    name: Default Organization
+    is_active: true

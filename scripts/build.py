@@ -39,7 +39,12 @@ RESOURCE_ORDER = [
 ]
 
 RESERVED_KEYS = {"schema_version", "exported_at"}
-KNOWN_TOP_LEVEL_KEYS = {*RESERVED_KEYS, *RESOURCE_ORDER, "flow_defaults"}
+# Multi-tenancy envelope fields: `organization` names the org (slug) every
+# resource section belongs to — imports bind to it instead of the caller's
+# ambient org — and `organizations` carries the platform org directory
+# (orgs with members and IdP mappings), upserted by slug before resources.
+ORG_KEYS = {"organization", "organizations"}
+KNOWN_TOP_LEVEL_KEYS = {*RESERVED_KEYS, *RESOURCE_ORDER, *ORG_KEYS, "flow_defaults"}
 
 
 @dataclass(frozen=True)
@@ -116,10 +121,20 @@ def merge_fragments(config: BundleConfig) -> dict[str, Any]:
         raise FileNotFoundError(f"No YAML fragments found in {config.source_dir}")
 
     sections: dict[str, Any] = {}
+    organization: str | None = None
     for path in files:
         fragment = load_fragment(path)
         for key, value in fragment.items():
             if key in {"schema_version", "exported_at"}:
+                continue
+            if key == "organization":
+                if not isinstance(value, str) or not value:
+                    raise ValueError(f"{path}: organization must be a non-empty slug")
+                if organization is not None and organization != value:
+                    raise ValueError(
+                        f"{path}: conflicting organization {value!r} (already {organization!r})"
+                    )
+                organization = value
                 continue
             if isinstance(value, list):
                 sections.setdefault(key, []).extend(value)
@@ -133,6 +148,10 @@ def merge_fragments(config: BundleConfig) -> dict[str, Any]:
                 raise ValueError(f"{path}: unsupported top-level value for {key!r}")
 
     merged: dict[str, Any] = {"schema_version": 2}
+    if organization is not None:
+        merged["organization"] = organization
+    if "organizations" in sections:
+        merged["organizations"] = sections.pop("organizations")
     for key in RESOURCE_ORDER:
         if key in sections:
             merged[key] = sections.pop(key)

@@ -40,9 +40,14 @@ scripts/validate.py
 - Every source fragment must be a YAML mapping with `schema_version: 2`.
 - Edit source fragments, not files under `dist/`.
 - Files in a bundle source directory are merged in lexical filename order
-  (the demo fragments are numbered `05`–`55` to control that order).
+  (the demo fragments are numbered `00`–`55` to control that order).
 - Top-level list sections are concatenated.
 - Top-level mapping sections are shallow-merged by key.
+- `organization` (scalar) may be set by at most one value across fragments
+  (repeating the same slug is fine); it binds the whole import to that org.
+  `organizations` entries (the platform org directory) concatenate like any
+  list section. The validator rejects `orgs/<other>/...` secret folders that
+  fall outside the declared organization's namespace.
 - Unsupported top-level keys fail the build so typos do not silently ship.
 - A `flow_attachments` entry may set `content_file: <repo-relative path>` in
   place of `content:`; the build reads that file (from `src/files/`) and inlines
