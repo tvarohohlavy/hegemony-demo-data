@@ -1,0 +1,73 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Acme's small retail estate: a head office and one store, with static,
+# unreachable devices that reference Acme's own SSH secret. They demonstrate
+# tenant-scoped inventory and vault-backed access config; they are not part of
+# the live containerlab lab (that belongs to Meridian's own org), so flows
+# that target them will fail at the reachability probe — as intended for a
+# self-contained demo.
+
+schema_version: 2
+
+sites:
+  - name: Acme HQ
+    description: Acme Retail head office network.
+    location: chicago
+    tags:
+      env: demo
+      tenant: acme
+      site_type: headquarters
+  - name: Store 100 - Chicago
+    description: Acme flagship retail store.
+    location: chicago
+    parent: Acme HQ
+    tags:
+      env: demo
+      tenant: acme
+      site_type: store
+
+devices:
+  - name: acme-hq-edge-01
+    mgmt_host: 10.20.0.1
+    vendor: Cisco
+    platform: ios-xe
+    model: C8300-1N1S-4T2X
+    current_version: 17.12.4
+    site: Acme HQ
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/acme/secrets/store/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/acme/secrets/store/ssh/password') }}"
+    tags:
+      role: edge
+      tenant: acme
+  - name: acme-store100-rtr-01
+    mgmt_host: 10.20.100.1
+    vendor: Cisco
+    platform: ios-xe
+    model: C1111-8P
+    current_version: 17.12.4
+    site: Acme HQ/Store 100 - Chicago
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/acme/secrets/store/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/acme/secrets/store/ssh/password') }}"
+    tags:
+      role: store
+      tenant: acme
+  - name: acme-store100-sw-01
+    mgmt_host: 10.20.100.2
+    vendor: Cisco
+    platform: ios-xe
+    model: C9300-24T
+    current_version: 17.12.4
+    site: Acme HQ/Store 100 - Chicago
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/acme/secrets/store/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/acme/secrets/store/ssh/password') }}"
+    tags:
+      role: access
+      tenant: acme

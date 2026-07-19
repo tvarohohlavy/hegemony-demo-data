@@ -1,0 +1,69 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Acme's own flow, alongside the shared "Compliance baseline report" it can
+# also run. This one renders Acme's effective standards and makes the override
+# visible: NTP_PRIMARY resolves to Acme's store-local appliance (10.20.0.123),
+# while DNS/syslog still come from the shared golden standards through the
+# read-through. Device-less, so it runs cleanly.
+
+schema_version: 2
+
+flows:
+  - name: "Acme: Store standards check"
+    description: >-
+      Render Acme's effective network standards. Confirms the store-local NTP
+      override wins over the shared standard while the other standards fall
+      through to Meridian's shared baseline.
+    definition:
+      graph:
+        nodes:
+          - id: start
+            name: Start
+            type: start
+            position_x: 0
+            position_y: 120
+          - id: render
+            name: Render Acme standards
+            type: step
+            kind: EXECUTE
+            phase: IMPLEMENTATION
+            handler: container.run
+            position_x: 320
+            position_y: 120
+            params:
+              image: alpine:3.20
+              working_dir: /workspace
+              timeout_seconds: 120
+              command:
+                - |
+                  set -e
+                  mkdir -p /artifacts/new
+                  {
+                    printf 'Tenant: %s\n' "{{ vars.TENANT_NAME }}"
+                    printf 'Effective NTP (overridden) : %s\n' "{{ vars.NTP_PRIMARY }}"
+                    printf 'Effective DNS (shared)     : %s\n' "{{ vars.DNS_PRIMARY }}"
+                    printf 'Effective syslog (shared)  : %s\n' "{{ vars.SYSLOG_PRIMARY }}"
+                  } | tee /artifacts/new/acme-standards.txt
+            policy:
+              timeout_sec: 150
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+          - id: done
+            name: Standards rendered
+            type: terminal
+            terminal_status: success
+            position_x: 640
+            position_y: 120
+        edges:
+          - id: e_start_render
+            source: start:start
+            target: render
+          - id: e_render_done
+            source: render:success
+            target: done
+      interface_graph:
+        nodes: []
+        edges: []

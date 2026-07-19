@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Permission overrides are a PLATFORM-GLOBAL admin control: the enforcement
+# layer loads every override without an org filter, so an override pins the
+# required policy for a route across the whole instance, not per tenant. That
+# is why this lives in the platform (org-directory) bundle, which has no
+# `organization` binding, rather than in a tenant bundle.
+#
+# The override below is illustrative and safe: it pins organization creation
+# (POST /api/v1/orgs) to the platform-admin policy — which is already its
+# effective requirement — so it changes no behavior while demonstrating the
+# permission-override surface that the Admin Permissions Editor manages.
+
+schema_version: 2
+
+permission_overrides:
+  - method: POST
+    path: /api/v1/orgs
+    policy: admin

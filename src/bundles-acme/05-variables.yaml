@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Acme overrides one shared standard: its retail stores run a store-local NTP
+# appliance instead of the golden 192.0.2.123. Because a per-org variable
+# wins over the shared one of the same name, {{ vars.NTP_PRIMARY }} resolves
+# to the value below for anything running in the acme org — including the
+# shared "Compliance baseline report" flow when Acme runs it — while
+# DNS_PRIMARY / SYSLOG_PRIMARY still fall through to the shared standards.
+
+schema_version: 2
+
+variables:
+  - name: NTP_PRIMARY
+    value: 10.20.0.123
+    description: Acme store-local NTP appliance. Overrides the shared NTP standard for this org.
+  - name: TENANT_NAME
+    value: Acme Retail
+    description: Tenant display name stamped into Acme's own flow output.

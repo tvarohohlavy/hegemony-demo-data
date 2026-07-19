@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Acme's own alerting, isolated to the acme org: Acme's admins configure and
+# see only this destination, never Meridian's or Globex's. Uses the demo's
+# MailHog-style SMTP sink.
+
+schema_version: 2
+
+notification_destinations:
+  - name: "Acme: NetOps Email"
+    type: email
+    enabled: true
+    config_json:
+      to:
+        - netops@acme.example
+      from: hegemony@acme.example
+      smtp_host_ref: "{{ env('HEGEMONY_DEMO_SMTP_HOST', 'demo-notification-smtp') }}"
+      smtp_port_ref: "{{ env('HEGEMONY_DEMO_SMTP_PORT', '1025') }}"
+      smtp_use_tls_ref: "{{ env('HEGEMONY_DEMO_SMTP_USE_TLS', 'false') }}"
+      smtp_use_starttls_ref: "{{ env('HEGEMONY_DEMO_SMTP_USE_STARTTLS', 'false') }}"
+
+flow_subscriptions:
+  - flow: "Acme: Store standards check"
+    destination: "Acme: NetOps Email"
+    event: run.completed
+    enabled: true
+  - flow: "Acme: Store standards check"
+    destination: "Acme: NetOps Email"
+    event: run.failed
+    enabled: true

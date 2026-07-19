@@ -9,11 +9,47 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 This repository is a content repo for Hegemony instance bootstrap bundles. It
 does not publish Python packages or runtime plugin modules.
 
+## The multi-organization demo
+
+The demo tells a Managed-Service-Provider story. **Meridian Networks** runs
+network automation both for itself and for client tenants:
+
+| Org | Slug | Who | Bundle |
+| --- | --- | --- | --- |
+| Meridian Networks | `default` | The MSP's own network (the original containerlab demo) | `src/bundles` → `dist/10-meridian…` |
+| Shared Standards | `shared` | The **enabled shared org** — golden baseline every org reads read-only | `src/bundles-shared` → `dist/20-…` |
+| Acme Retail | `acme` | Isolated client tenant; overrides the shared NTP standard | `src/bundles-acme` → `dist/30-…` |
+| Globex Manufacturing | `globex` | Isolated client tenant; inherits the shared standards unchanged | `src/bundles-globex` → `dist/40-…` |
+
+The platform org directory (`src/bundles-organizations` → `dist/00-…`) declares
+all four orgs with their **IdP group→org-role mappings**, designates `shared`,
+and carries the one platform-global permission override. It imports first, so
+the per-org bundles bind to orgs that already exist and `shared` imports before
+the tenants that reference its golden flow.
+
+Role grants come from the mappings: with `HEGEMONY_ORG_IDP_SYNC` on (set in the
+demo env), a user's Keycloak groups grant the mapped org roles at login. The
+demo realm ships matching groups and users (`meridian-noc`, `acme-admin`,
+`globex-admin`, `consultant`, `compliance`); the `consultant` also has one
+explicit manual membership in the shared org, so both membership sources are
+shown. Because IdP reconciliation runs before default-org auto-join, mapped
+tenant users never leak into the default org — that is what keeps the client
+tenants isolated.
+
+Shared variables and secrets (the `orgs/shared/…` namespace) resolve for every
+org at run time, so a bundle may reference them; the validator mirrors this
+(`own ∪ shared`) while still rejecting references to another tenant's
+resources.
+
 ## Layout
 
 ```text
 manifest.yaml
-src/bundles/
+src/bundles/                 # default org — Meridian's own environment
+src/bundles-organizations/   # platform org directory + IdP mappings + global policy
+src/bundles-shared/          # the shared org's golden standards
+src/bundles-acme/            # client tenant: Acme Retail
+src/bundles-globex/          # client tenant: Globex Manufacturing
 src/files/
 demo-inventory/
 dist/
@@ -22,6 +58,9 @@ scripts/validate.py
 ```
 
 - `manifest.yaml` lists generated bundles and their source/output paths.
+- `src/bundles*/` directories each merge into one dist bundle; the instance
+  bootstrap imports every `dist/*.yaml` in filename order (the numeric
+  prefixes sequence the import).
 - `src/bundles/*.yaml` contains human-edited Configuration Exchange fragments.
 - `src/files/**` holds larger flow-attachment payloads (Dockerfile, containerlab
   topology, FRR configs, provisioning scripts) referenced from
@@ -63,13 +102,18 @@ Add a new entry to `manifest.yaml`:
 ```yaml
 schema_version: 1
 bundles:
-  - id: hegemony-demo
+  - id: hegemony-demo-default
     source_dir: src/bundles
-    output: dist/hegemony-demo.single.yaml
+    output: dist/10-meridian.single.yaml
   - id: another-example
     source_dir: src/another-example
     output: dist/another-example.single.yaml
 ```
+
+A bundle that binds to a non-default org sets `organization: <slug>` and, if the
+org is not seeded by the platform, is declared in the `organizations` directory
+of the first-imported bundle. Prefix the `output` filename so the bootstrap
+imports directories before the orgs that depend on them.
 
 Then run:
 

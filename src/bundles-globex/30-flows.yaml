@@ -1,0 +1,65 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Globex's own standards check. With no override, every value resolves to the
+# shared golden standard — the contrast with Acme's overridden NTP.
+
+schema_version: 2
+
+flows:
+  - name: "Globex: Plant standards check"
+    description: >-
+      Render Globex's effective network standards — all inherited unchanged
+      from Meridian's shared golden baseline.
+    definition:
+      graph:
+        nodes:
+          - id: start
+            name: Start
+            type: start
+            position_x: 0
+            position_y: 120
+          - id: render
+            name: Render Globex standards
+            type: step
+            kind: EXECUTE
+            phase: IMPLEMENTATION
+            handler: container.run
+            position_x: 320
+            position_y: 120
+            params:
+              image: alpine:3.20
+              working_dir: /workspace
+              timeout_seconds: 120
+              command:
+                - |
+                  set -e
+                  mkdir -p /artifacts/new
+                  {
+                    printf 'Tenant: %s\n' "{{ vars.TENANT_NAME }}"
+                    printf 'Effective NTP (shared)    : %s\n' "{{ vars.NTP_PRIMARY }}"
+                    printf 'Effective DNS (shared)    : %s\n' "{{ vars.DNS_PRIMARY }}"
+                    printf 'Effective syslog (shared) : %s\n' "{{ vars.SYSLOG_PRIMARY }}"
+                  } | tee /artifacts/new/globex-standards.txt
+            policy:
+              timeout_sec: 150
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+          - id: done
+            name: Standards rendered
+            type: terminal
+            terminal_status: success
+            position_x: 640
+            position_y: 120
+        edges:
+          - id: e_start_render
+            source: start:start
+            target: render
+          - id: e_render_done
+            source: render:success
+            target: done
+      interface_graph:
+        nodes: []
+        edges: []

@@ -1,0 +1,85 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# The golden compliance flow. It lives in the shared org, so every tenant
+# sees it (flagged "Shared") and can RUN it — and a run of a shared flow
+# executes as the CONSUMER org. That makes it the clearest cross-org
+# showcase: when Acme runs it, the report resolves Acme's NTP override while
+# still reading the shared DNS/syslog standards and the shared monitoring
+# token, because the worker merges the consumer org's resolution scope over
+# the shared one. The flow needs no devices, so it runs cleanly in any org.
+
+schema_version: 2
+
+flows:
+  - name: "Shared: Compliance baseline report"
+    description: >-
+      Render this organization's effective network standards (NTP/DNS/syslog,
+      approved images) into an artifact, proving which values resolve for the
+      org that runs it. Published by Meridian in the shared org; runnable by
+      every tenant.
+    definition:
+      graph:
+        nodes:
+          - id: start
+            name: Start
+            type: start
+            position_x: 0
+            position_y: 120
+          - id: render
+            name: Render standards report
+            type: step
+            kind: EXECUTE
+            phase: IMPLEMENTATION
+            handler: container.run
+            position_x: 320
+            position_y: 120
+            params:
+              image: alpine:3.20
+              working_dir: /workspace
+              timeout_seconds: 120
+              env:
+                # Proves the shared monitoring token resolves for whatever org
+                # runs the flow, without printing it. The worker's secret
+                # confinement admits the shared namespace for every org.
+                MON_TOKEN: "{{ secret('vault://orgs/shared/secrets/standards/monitoring/token') }}"
+              command:
+                - |
+                  set -e
+                  mkdir -p /artifacts/new
+                  REPORT=/artifacts/new/compliance-baseline.txt
+                  {
+                    printf 'Compliance baseline — curated by %s\n' "{{ vars.STANDARDS_OWNER }}"
+                    printf 'Effective standards for the running organization:\n'
+                    printf '  NTP primary    : %s\n' "{{ vars.NTP_PRIMARY }}"
+                    printf '  DNS primary    : %s\n' "{{ vars.DNS_PRIMARY }}"
+                    printf '  Syslog primary : %s\n' "{{ vars.SYSLOG_PRIMARY }}"
+                    printf '  Approved images: %s\n' "{{ vars.APPROVED_CONTAINER_IMAGES }}"
+                    if [ -n "${MON_TOKEN}" ]; then
+                      printf '  Monitoring token: present (shared, masked)\n'
+                    else
+                      printf '  Monitoring token: MISSING\n'
+                    fi
+                  } | tee "${REPORT}"
+            policy:
+              timeout_sec: 150
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+          - id: done
+            name: Report generated
+            type: terminal
+            terminal_status: success
+            position_x: 640
+            position_y: 120
+        edges:
+          - id: e_start_render
+            source: start:start
+            target: render
+          - id: e_render_done
+            source: render:success
+            target: done
+      interface_graph:
+        nodes: []
+        edges: []

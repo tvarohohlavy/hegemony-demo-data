@@ -71,10 +71,24 @@ KNOWN_HANDLERS = {
 
 
 class Validator:
-    def __init__(self, bundle_id: str, bundle: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        bundle_id: str,
+        bundle: dict[str, Any],
+        *,
+        shared_variables: set[str] | None = None,
+        shared_secret_paths: set[str] | None = None,
+    ) -> None:
         self.bundle_id = bundle_id
         self.bundle = bundle
         self.errors: list[str] = []
+        # Variables and secrets defined in the shared org resolve for every
+        # org at run time (the worker merges the shared scope under each
+        # org's own, own winning). Mirror that here so a bundle may reference
+        # a shared golden variable/secret without redefining it — while a
+        # reference to some *other* tenant's resource still fails.
+        self.shared_variables = shared_variables or set()
+        self.shared_secret_paths = shared_secret_paths or set()
 
     def error(self, message: str) -> None:
         self.errors.append(f"{self.bundle_id}: {message}")
@@ -90,7 +104,7 @@ class Validator:
         self._validate_devices(site_paths)
         self._validate_flow_references(flow_names)
         self._validate_subscription_references(flow_names, destination_names)
-        self._validate_template_references(secret_paths)
+        self._validate_template_references(secret_paths | self.shared_secret_paths)
         self._validate_ref_fields()
         self._validate_handlers()
         return self.errors
@@ -243,7 +257,7 @@ class Validator:
                 )
 
     def _validate_template_references(self, secret_paths: set[str]) -> None:
-        variables = self._names("variables")
+        variables = self._names("variables") | self.shared_variables
         for location, value in self._walk_strings(self.bundle):
             for match in SECRET_CALL_RE.finditer(value):
                 ref = match.group(1)
@@ -416,6 +430,54 @@ def _selected_configs(bundle_id: str | None) -> list[BundleConfig]:
     return selected
 
 
+def _collect_secret_paths(bundle: dict[str, Any]) -> set[str]:
+    """Vault paths (folder/key) defined by a bundle's secrets section."""
+    paths: set[str] = set()
+    for secret in bundle.get("secrets", []) or []:
+        if not isinstance(secret, dict):
+            continue
+        folder = secret.get("folder")
+        values = secret.get("values")
+        if not isinstance(folder, str) or not isinstance(values, dict):
+            continue
+        for key in values:
+            if isinstance(key, str) and key:
+                paths.add(f"{folder.strip('/')}/{key}")
+    return paths
+
+
+def _shared_reference_universe(
+    merged_bundles: dict[str, dict[str, Any]],
+) -> tuple[str | None, set[str], set[str]]:
+    """Find the shared org's slug and the variables/secrets it publishes.
+
+    Every org reads the shared org's variables and secrets at run time, so a
+    bundle may reference them. Returns (shared_slug, variable_names,
+    secret_paths); the shared bundle is the resource bundle bound to the org
+    the directory marks ``is_shared: true``.
+    """
+    shared_slug: str | None = None
+    for bundle in merged_bundles.values():
+        for entry in bundle.get("organizations", []) or []:
+            if isinstance(entry, dict) and entry.get("is_shared") and entry.get("slug"):
+                shared_slug = entry["slug"]
+                break
+        if shared_slug is not None:
+            break
+    if shared_slug is None:
+        return None, set(), set()
+
+    for bundle in merged_bundles.values():
+        if bundle.get("organization") == shared_slug:
+            variables = {
+                v.get("name")
+                for v in bundle.get("variables", []) or []
+                if isinstance(v, dict) and isinstance(v.get("name"), str)
+            }
+            return shared_slug, {n for n in variables if n}, _collect_secret_paths(bundle)
+    return shared_slug, set(), set()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bundle", help="validate only the named manifest bundle")
@@ -423,9 +485,26 @@ def main() -> int:
 
     try:
         configs = _selected_configs(args.bundle)
+        # Merge every manifest bundle (not just the selected ones) so the
+        # shared reference universe is complete even when validating a single
+        # bundle that references shared variables/secrets.
+        merged_all = {config.id: merge_fragments(config) for config in load_manifest()}
+        shared_slug, shared_vars, shared_secrets = _shared_reference_universe(merged_all)
+
         errors: list[str] = []
         for config in configs:
-            errors.extend(Validator(config.id, merge_fragments(config)).validate())
+            merged = merged_all.get(config.id) or merge_fragments(config)
+            # The shared bundle validates against only its own resources — it
+            # cannot read other orgs.
+            is_shared_bundle = merged.get("organization") == shared_slug
+            errors.extend(
+                Validator(
+                    config.id,
+                    merged,
+                    shared_variables=set() if is_shared_bundle else shared_vars,
+                    shared_secret_paths=set() if is_shared_bundle else shared_secrets,
+                ).validate()
+            )
         errors.extend(validate_inventory_tree(ROOT / "demo-inventory"))
     except Exception as exc:
         print(f"validate.py: {exc}", file=sys.stderr)

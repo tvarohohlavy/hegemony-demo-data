@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# A shared object-storage repository for golden artifacts — approved images,
+# baseline configs, signed firmware — published once by Meridian and readable
+# by every org through the shared read-through. It points at the demo MinIO
+# service (S3-compatible) that the demo stack already runs; tenants see it
+# flagged "Shared" and read-only in the file-repository browser.
+
+schema_version: 2
+
+file_repositories:
+  - name: Golden Artifacts
+    kind: s3
+    endpoint_url: http://minio:9000
+    bucket: meridian-golden
+    prefix: standards/
+    is_default: false

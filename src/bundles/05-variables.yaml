@@ -42,14 +42,9 @@ variables:
     description: Management subnet containerlab assigns to the FRR lab routers.
 
   # --- Shared network services (org standards) --------------------------------
-  # Recorded in every backup manifest so each backup snapshot carries the org
-  # facts alongside the device configurations.
-  - name: NTP_PRIMARY
-    value: 192.0.2.123
-    description: Primary NTP server; recorded in backup manifests as an org standard.
-  - name: DNS_PRIMARY
-    value: 192.0.2.53
-    description: Primary DNS resolver; recorded in backup manifests as an org standard.
-  - name: SYSLOG_PRIMARY
-    value: 192.0.2.54
-    description: Primary syslog collector; recorded in backup manifests as an org standard.
+  # The NTP/DNS/SYSLOG standards now live in the SHARED org (Shared Standards),
+  # so every org — Meridian's own default org included — reads the same golden
+  # values through the shared read-through. Meridian's backup flow references
+  # {{ vars.NTP_PRIMARY }} et al. and resolves them from the shared org at run
+  # time; see src/bundles-shared/05-variables.yaml. The variable picker shows
+  # them with a "shared organization" marker.
