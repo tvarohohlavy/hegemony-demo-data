@@ -12,6 +12,11 @@ This repository owns source YAML fragments and committed generated single-YAML
 bundles. Hegemony can load the generated bundle through its generic instance
 bootstrap path by mounting `dist/` into the API container at `/bootstrap`.
 
+Once it is up, follow the [**guided walkthrough**](docs/walkthrough.md) — a
+scripted tour that logs you in as each persona (Meridian NOC, the Acme and
+Globex tenant admins, a cross-tenant consultant, a compliance auditor) and runs
+flows to exercise the whole platform in the multi-org story.
+
 ## Quickstart: one-command demo
 
 [`install.sh`](install.sh) brings the whole demo up with a single command. It
@@ -114,13 +119,23 @@ example of a long-running, human-in-the-loop run.
 
 ```text
 manifest.yaml
-src/bundles/          # human-edited Configuration Exchange fragments
+src/bundles/          # default org — Meridian's own environment
+src/bundles-organizations/  # org directory + IdP mappings + platform policy
+src/bundles-shared/   # the shared org's golden standards
+src/bundles-acme/     # client tenant: Acme Retail
+src/bundles-globex/   # client tenant: Globex Manufacturing
 src/files/            # attachment payloads inlined at build time (content_file)
 demo-inventory/       # git-provider inventory tree (sites/ + devices/)
-dist/hegemony-demo.single.yaml
+dist/*.single.yaml    # platform org-directory bundle + one resource bundle per org; imported in filename order
 scripts/build.py
 scripts/validate.py
 ```
+
+The demo is a multi-organization Managed-Service-Provider story — Meridian
+Networks running automation for itself and two client tenants, plus an enabled
+shared "Shared Standards" org. See [docs/structure.md](docs/structure.md) for
+the org layout, the IdP group→org-role mappings, and how the tenants stay
+isolated.
 
 - `manifest.yaml` declares generated bundles.
 - `src/bundles/` contains human-edited Configuration Exchange fragments, merged
@@ -158,7 +173,7 @@ uv run python scripts/build.py --check
 uv run python scripts/validate.py
 ```
 
-`--check` fails when `dist/hegemony-demo.single.yaml` is not in sync with the source fragments. `validate.py` fails on broken flow, site, destination, variable, or bundled `vault://` references, on unknown step-handler ids, and on a malformed `demo-inventory/` tree. The pre-commit hook regenerates the bundle automatically.
+`--check` fails when any `dist/*.single.yaml` is not in sync with its source fragments. `validate.py` fails on broken flow, site, destination, variable, or bundled `vault://` references (including cross-tenant references, while shared-org references are allowed), on unknown step-handler ids, and on a malformed `demo-inventory/` tree. The pre-commit hook regenerates the bundles automatically.
 
 To generate release checksums:
 

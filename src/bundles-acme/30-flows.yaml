@@ -1,0 +1,108 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Acme's own standards check — a tenant-authored flow alongside the shared
+# golden flows it can also run. It mounts the same report script the shared
+# flow uses (no inline command) and passes Acme's own values: NTP_PRIMARY
+# resolves to Acme's store-local override while DNS/syslog fall through to the
+# shared golden standards. Device-less, so it runs with no form input.
+
+schema_version: 2
+
+flows:
+  - name: "Acme: Store standards check"
+    description: >-
+      Render Acme's effective network standards. Confirms the store-local NTP
+      override wins over the shared standard while the others fall through to
+      Meridian's shared baseline.
+    definition:
+      graph:
+        nodes:
+          - id: start
+            name: Start
+            type: start
+            position_x: 0
+            position_y: 120
+          - id: render
+            name: Render Acme standards
+            type: step
+            kind: EXECUTE
+            phase: IMPLEMENTATION
+            handler: container.run
+            position_x: 320
+            position_y: 120
+            mounted_files:
+              - report.sh
+            params:
+              image: alpine:3.20
+              working_dir: /workspace
+              timeout_seconds: 120
+              command:
+                - sh /attachments/report.sh
+              env:
+                REPORT_NAME: acme-standards
+                TENANT_NAME: "{{ vars.TENANT_NAME }}"
+                NTP_PRIMARY: "{{ vars.NTP_PRIMARY }}"
+                DNS_PRIMARY: "{{ vars.DNS_PRIMARY }}"
+                SYSLOG_PRIMARY: "{{ vars.SYSLOG_PRIMARY }}"
+            policy:
+              timeout_sec: 150
+              retries: 0
+              on_failure: FAIL_RUN
+              evidence_required: true
+          - id: done
+            name: Standards rendered
+            type: terminal
+            terminal_status: success
+            position_x: 640
+            position_y: 120
+        edges:
+          - id: e_start_render
+            source: start:start
+            target: render
+          - id: e_render_done
+            source: render:success
+            target: done
+      interface_graph:
+        # Preselected default targets: the field ships Acme's store routers
+        # already selected (by portable device name, resolved to ids on
+        # import), so the run form opens with targets filled in. The field is
+        # optional, so the flow still runs with no input.
+        nodes:
+          - id: sec_targets
+            kind: section
+            position_x: 80
+            position_y: 80
+            width: 480
+            height: 180
+            data:
+              label: Store routers
+              runtime_layout: card
+              collapsible: false
+          - id: f_targets
+            kind: field
+            parent_id: sec_targets
+            position_x: 40
+            position_y: 60
+            data:
+              label: Store routers
+              field_id: targets
+              field_type: inventory.device
+              required: false
+              description: Acme's store routers, preselected by default.
+              default_value:
+                - acme-hq-edge-01
+                - acme-store100-rtr-01
+                - acme-store100-sw-01
+              config:
+                role: store_routers
+                multiple: true
+                option_source:
+                  kind: inventory.devices
+        edges: []
+
+flow_attachments:
+  - flow: "Acme: Store standards check"
+    filename: report.sh
+    content_file: src/files/standards/report.sh

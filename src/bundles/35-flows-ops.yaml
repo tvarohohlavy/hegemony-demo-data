@@ -178,7 +178,22 @@ flows:
               field_id: targets
               field_type: inventory.device
               required: true
-              description: Devices to back up (pick the lab routers).
+              description: Devices to back up — the lab routers, preselected.
+              # Preselected default targets: the run form opens with every lab
+              # router already selected (portable device names resolved to ids
+              # on import, once the git provider sync has materialized them).
+              default_value:
+                - dc1-core-01
+                - dc1-core-02
+                - dc1-acc-01
+                - dc1-acc-02
+                - dc2-core-01
+                - dc2-core-02
+                - dc2-acc-01
+                - br1-edge-01
+                - br1-acc-01
+                - br2-edge-01
+                - br2-acc-01
               config:
                 role: backup_targets
                 multiple: true
@@ -234,7 +249,8 @@ flows:
     description: >-
       Advertise a service loopback prefix on the selected routers after
       approval. Collects pre-change evidence, applies the CLI change, collects
-      post-change evidence and compares the two. The launch form demonstrates
+      post-change evidence, then confirms the running config actually changed
+      (a diff is the success signal). The launch form demonstrates
       number/text/bool/enum fields, cross-field templated defaults, input
       validation, and a conditional (visible_when) field.
     definition:
@@ -336,7 +352,7 @@ flows:
               on_failure: FAIL_RUN
               evidence_required: true
           - id: compare
-            name: Compare pre/post evidence
+            name: Confirm the config changed
             type: step
             kind: CHECK
             phase: VERIFY
@@ -346,6 +362,18 @@ flows:
             params:
               precheck_step_id: precheck
               postcheck_step_id: postcheck
+              # A successful announcement MUST change the running config, so a
+              # difference is the success signal here (not a failure). If the
+              # apply did not take effect, the config is unchanged and this
+              # fails — which is what we want.
+              comparison_type: changed
+              # Compare only the running config: it changes deterministically
+              # when the loopback is added. The routing and neighbor tables
+              # carry uptime/timer counters that drift every second, so they
+              # would always "differ" regardless of the announcement. (To
+              # compare those anyway, mask the volatile columns with
+              # ignore_patterns, e.g. ", \d\d:\d\d:\d\d,".)
+              artifact_name_pattern: "*show running-config"
             policy:
               timeout_sec: 60
               retries: 0
@@ -422,7 +450,14 @@ flows:
               field_id: targets
               field_type: inventory.device
               required: true
-              description: Routers to advertise the service prefix on.
+              description: Routers to advertise the service prefix on — the core, preselected.
+              # Preselected default targets: the lab core routers ship already
+              # selected (portable device names resolved to ids on import).
+              default_value:
+                - dc1-core-01
+                - dc1-core-02
+                - dc2-core-01
+                - dc2-core-02
               config:
                 role: announce_targets
                 multiple: true
@@ -708,7 +743,21 @@ flows:
               field_id: targets
               field_type: inventory.device
               required: true
-              description: Routers to health-check.
+              description: Routers to health-check — the whole lab fabric, preselected.
+              # Preselected default targets: every lab router ships already
+              # selected (portable device names resolved to ids on import).
+              default_value:
+                - dc1-core-01
+                - dc1-core-02
+                - dc1-acc-01
+                - dc1-acc-02
+                - dc2-core-01
+                - dc2-core-02
+                - dc2-acc-01
+                - br1-edge-01
+                - br1-acc-01
+                - br2-edge-01
+                - br2-acc-01
               config:
                 role: health_targets
                 multiple: true
@@ -857,7 +906,14 @@ flows:
               field_id: sources
               field_type: inventory.device
               required: true
-              description: Pick one or more lab endpoint hosts (role server).
+              description: Lab endpoint hosts (role server) to probe from — preselected.
+              # Preselected default targets: the lab endpoint hosts ship already
+              # selected (portable device names resolved to ids on import).
+              default_value:
+                - dc1-srv-01
+                - dc2-srv-01
+                - br1-srv-01
+                - br2-srv-01
               config:
                 role: probe_sources
                 multiple: true

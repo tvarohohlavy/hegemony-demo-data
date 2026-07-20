@@ -1,0 +1,109 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Platform organization directory for the Meridian MSP demo.
+#
+# The story: Meridian Networks, once a single operator, now runs network
+# automation as a Managed Service Provider. Alongside its own environment
+# (the `default` org, with the original containerlab demo) it hosts two
+# isolated client tenants — Acme Retail and Globex Manufacturing — and
+# publishes a `shared` "Shared Standards" org whose golden baseline every
+# org reads (read-only) but only Meridian curates.
+#
+# This bundle carries only the `organizations` directory (no `organization`
+# binding and no resource sections). It imports first (dist/00-...), so the
+# per-org resource bundles that follow can bind to orgs that already exist,
+# and the shared designation is applied authoritatively from one place.
+#
+# Role grants are expressed through IdP mappings (claim: groups, value:
+# /GroupName -> org role): with HEGEMONY_ORG_IDP_SYNC enabled, a user's
+# Keycloak groups grant the mapped org roles at login (JIT membership). The
+# demo realm ships the matching groups and demo users. One explicit `member`
+# (the consultant in the shared org) shows that manual and IdP-sourced
+# memberships coexist on the same user.
+schema_version: 2
+
+organizations:
+  # --- Meridian's own environment -------------------------------------------
+  - slug: default
+    name: Meridian Networks
+    description: The MSP's own network — labs, backups, and change automation.
+    is_active: true
+    idp_mappings:
+      # Meridian NOC engineers operate Meridian's own org.
+      - claim: groups
+        value: /Meridian-NOC
+        role: operator
+      # Compliance auditors read every org, Meridian's included.
+      - claim: groups
+        value: /Compliance
+        role: auditor
+
+  # --- The enabled shared organization --------------------------------------
+  # Active AND flagged shared: while active, its resources (golden variables,
+  # the compliance flow, the approved-image list, the shared file repo) are
+  # readable read-only from every other org. Exactly one org may carry the
+  # flag; the import applies it authoritatively.
+  - slug: shared
+    name: Shared Standards
+    description: Golden baseline every org inherits — curated by Meridian, read-only to tenants.
+    is_active: true
+    is_shared: true
+    members:
+      # Manual membership alongside IdP-mapped ones: the cross-tenant
+      # consultant is granted read access to the shared standards by hand.
+      # (Keyed by the demo realm's stable subject for the `consultant` user.)
+      - user: "00000000-0000-0000-0000-0000000000c0"
+        username: consultant
+        role: viewer
+        source: manual
+    idp_mappings:
+      # Meridian NOC curates the golden standards (operator = can edit).
+      - claim: groups
+        value: /Meridian-NOC
+        role: operator
+      # Tenants read the standards; they never edit them.
+      - claim: groups
+        value: /Acme-Admins
+        role: viewer
+      - claim: groups
+        value: /Globex-Admins
+        role: viewer
+      - claim: groups
+        value: /Compliance
+        role: auditor
+
+  # --- Client tenant: Acme Retail -------------------------------------------
+  - slug: acme
+    name: Acme Retail
+    description: Client tenant — Acme's retail-store network estate.
+    is_active: true
+    idp_mappings:
+      # Acme's own admins run their tenant; the roaming consultant operates it.
+      - claim: groups
+        value: /Acme-Admins
+        role: admin
+      - claim: groups
+        value: /Consultants
+        role: operator
+      - claim: groups
+        value: /Compliance
+        role: auditor
+
+  # --- Client tenant: Globex Manufacturing ----------------------------------
+  - slug: globex
+    name: Globex Manufacturing
+    description: Client tenant — Globex's plant-floor network estate.
+    is_active: true
+    idp_mappings:
+      - claim: groups
+        value: /Globex-Admins
+        role: admin
+      # The same consultant operates Globex too — one user, two client orgs.
+      - claim: groups
+        value: /Consultants
+        role: operator
+      - claim: groups
+        value: /Compliance
+        role: auditor

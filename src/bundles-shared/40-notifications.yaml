@@ -1,0 +1,37 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# A shared platform-NOC email destination, published in the shared org so
+# every tenant sees it (flagged "Shared") and Meridian's golden flow can
+# subscribe to it. Uses the same MailHog-style sink the default org uses.
+
+schema_version: 2
+
+notification_destinations:
+  - name: "Shared: Platform NOC Email"
+    type: email
+    enabled: true
+    config_json:
+      to:
+        - platform-noc@meridian.example
+      from: standards@meridian.example
+      smtp_host_ref: "{{ env('HEGEMONY_DEMO_SMTP_HOST', 'demo-notification-smtp') }}"
+      smtp_port_ref: "{{ env('HEGEMONY_DEMO_SMTP_PORT', '1025') }}"
+      smtp_use_tls_ref: "{{ env('HEGEMONY_DEMO_SMTP_USE_TLS', 'false') }}"
+      smtp_use_starttls_ref: "{{ env('HEGEMONY_DEMO_SMTP_USE_STARTTLS', 'false') }}"
+
+flow_subscriptions:
+  # Meridian is alerted whenever a golden-flow run fails, in any org.
+  - flow: "Shared: Compliance baseline report"
+    destination: "Shared: Platform NOC Email"
+    event: run.failed
+    enabled: true
+  - flow: "Shared: Ansible config audit"
+    destination: "Shared: Platform NOC Email"
+    event: run.failed
+    enabled: true
+  - flow: "Shared: Terraform network baseline plan"
+    destination: "Shared: Platform NOC Email"
+    event: run.failed
+    enabled: true

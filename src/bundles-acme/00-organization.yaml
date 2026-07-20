@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Acme Retail — an isolated client tenant Meridian manages. Every resource in
+# this bundle binds to the `acme` org. Acme users (Keycloak group /Acme-Admins,
+# mapped to acme:admin) see only this org and the shared standards; they never
+# see Meridian's own org or the other tenant. Secret folders are namespaced
+# under orgs/acme/... .
+schema_version: 2
+
+organization: acme

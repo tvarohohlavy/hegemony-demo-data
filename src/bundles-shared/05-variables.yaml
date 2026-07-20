@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Golden standards every organization inherits. These live in the shared org,
+# so a flow in ANY org resolves {{ vars.NTP_PRIMARY }} to the value below —
+# unless that org defines its own variable of the same name, which wins (see
+# Acme Retail, which overrides NTP_PRIMARY to a store-local appliance). The
+# variable picker shows these with a "shared organization" marker in every
+# tenant.
+
+schema_version: 2
+
+variables:
+  # --- Shared network service standards --------------------------------------
+  - name: NTP_PRIMARY
+    value: 192.0.2.123
+    description: Golden primary NTP server. Shared standard; a tenant may override it.
+  - name: DNS_PRIMARY
+    value: 192.0.2.53
+    description: Golden primary DNS resolver. Shared standard read by every org.
+  - name: SYSLOG_PRIMARY
+    value: 192.0.2.54
+    description: Golden primary syslog collector. Shared standard read by every org.
+
+  # --- Shared operational standards ------------------------------------------
+  - name: APPROVED_CONTAINER_IMAGES
+    value: "alpine:3.20, alpine/git:v2.45.2, ghcr.io/srl-labs/clab:0.77.0"
+    description: Container images Meridian has vetted for flow steps; surfaced to every org.
+  - name: STANDARDS_OWNER
+    value: Meridian Shared Standards
+    description: Curator of the golden baseline, stamped into shared-flow output.
+  - name: TENANT_NAME
+    value: Shared Standards
+    description: >-
+      Display name of the org running a shared flow. A golden default each
+      tenant overrides (Acme Retail, Globex Manufacturing), so a shared flow
+      run by a tenant labels itself with the consumer org's name.

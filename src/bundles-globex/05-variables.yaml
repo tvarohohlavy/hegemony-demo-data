@@ -1,0 +1,13 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Globex defines no NTP override, so every standard resolves to Meridian's
+# shared golden value — the deliberate contrast with Acme.
+
+schema_version: 2
+
+variables:
+  - name: TENANT_NAME
+    value: Globex Manufacturing
+    description: Tenant display name stamped into Globex's own flow output.

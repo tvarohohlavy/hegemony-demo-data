@@ -1,0 +1,17 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Multi-tenancy binding for Meridian's own environment.
+#
+# `organization: default` binds every resource section in this bundle to the
+# `default` org (Meridian Networks); all secret folders are namespaced under
+# orgs/default/... to match. The platform-wide org directory — the
+# `organizations` section that declares default, shared, acme and globex with
+# their IdP mappings — lives in the separate `src/bundles-organizations`
+# bundle, which imports first (dist/00-organizations...). Keeping the
+# directory in one place means the shared-org designation is applied from a
+# single authoritative source.
+schema_version: 2
+
+organization: default

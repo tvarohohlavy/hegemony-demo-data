@@ -2,9 +2,43 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+# The demo tells a Managed-Service-Provider story: Meridian Networks runs
+# network automation for client tenants. Each org is built into its own
+# single-YAML bundle; the instance bootstrap imports every dist/*.yaml in
+# filename order, so the numeric prefixes sequence the import:
+#   00 organizations       — the org directory (must exist before per-org bundles)
+#   05 meridian-inventory  — Meridian's git repos + inventory providers, imported
+#                            ahead of the flows so the bootstrap syncs the git lab
+#                            devices into inventory first; the default-org flows'
+#                            preselected default targets then resolve to real ids
+#   10 default             — Meridian's own environment (the original demo)
+#   20 shared              — Shared Standards (the enabled shared org)
+#   30 acme / 40 globex    — two isolated client tenants
+# Shared imports before the tenants so a tenant flow can reference the shared
+# golden flow by name.
 schema_version: 1
 bundles:
-  - id: hegemony-demo
-    description: Public local-demo instance bootstrap bundle
+  - id: hegemony-demo-organizations
+    description: Platform org directory (default + shared + client tenants) with IdP mappings
+    source_dir: src/bundles-organizations
+    output: dist/00-organizations.single.yaml
+  - id: hegemony-demo-meridian-inventory
+    description: Meridian's git repositories and inventory providers (synced before flows import)
+    source_dir: src/bundles-meridian-inventory
+    output: dist/05-meridian-inventory.single.yaml
+  - id: hegemony-demo-default
+    description: Meridian Networks — the MSP's own environment (default org)
     source_dir: src/bundles
-    output: dist/hegemony-demo.single.yaml
+    output: dist/10-meridian.single.yaml
+  - id: hegemony-demo-shared
+    description: Shared Standards — the enabled shared org's golden baseline
+    source_dir: src/bundles-shared
+    output: dist/20-shared-standards.single.yaml
+  - id: hegemony-demo-acme
+    description: Acme Retail — an isolated client tenant
+    source_dir: src/bundles-acme
+    output: dist/30-acme-retail.single.yaml
+  - id: hegemony-demo-globex
+    description: Globex Manufacturing — a second isolated client tenant
+    source_dir: src/bundles-globex
+    output: dist/40-globex.single.yaml

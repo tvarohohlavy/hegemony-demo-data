@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Resources in this bundle belong to the SHARED organization (Shared
+# Standards). Because that org is designated shared and active (see
+# src/bundles-organizations), everything here is readable read-only from
+# every other org: tenants and Meridian alike see these variables, secrets,
+# the golden compliance flow, and the shared file repository, flagged
+# "Shared" in the UI. Only Meridian NOC (operator in shared) can edit them.
+#
+# The org directory declares shared with is_shared: true; this bundle only
+# binds resources to it, so importing into the shared org is a normal write
+# (the read-only guard applies to *other* orgs reading in, never to the
+# shared org editing its own resources).
+schema_version: 2
+
+organization: shared

@@ -1,0 +1,43 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Golden config-audit playbook. It runs against localhost (no network devices
+# needed), reads the organization's effective standards from the environment
+# the flow resolves from {{ vars.* }}, asserts they are all defined, and writes
+# a PASS/FAIL audit report into the run artifacts. Mounted into the container
+# at /attachments and executed by run.sh.
+- name: Meridian golden config audit
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    tenant: "{{ lookup('env', 'TENANT_NAME') | default('unknown', true) }}"
+    ntp: "{{ lookup('env', 'NTP_PRIMARY') }}"
+    dns: "{{ lookup('env', 'DNS_PRIMARY') }}"
+    syslog: "{{ lookup('env', 'SYSLOG_PRIMARY') }}"
+  tasks:
+    - name: Ensure the artifact directory exists
+      ansible.builtin.file:
+        path: /artifacts/new
+        state: directory
+        mode: "0755"
+
+    - name: Assert the golden standards are all defined
+      ansible.builtin.assert:
+        that:
+          - ntp | length > 0
+          - dns | length > 0
+          - syslog | length > 0
+        success_msg: "All golden standards are present for {{ tenant }}."
+        fail_msg: "One or more golden standards is unset for {{ tenant }}."
+
+    - name: Render the audit report
+      ansible.builtin.copy:
+        dest: /artifacts/new/ansible-audit.txt
+        mode: "0644"
+        content: |
+          Ansible golden config audit — {{ tenant }}
+          NTP primary    : {{ ntp }}
+          DNS primary    : {{ dns }}
+          Syslog primary : {{ syslog }}
+          Result         : PASS (all standards present)

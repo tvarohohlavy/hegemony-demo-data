@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Globex Manufacturing — a second isolated client tenant. Unlike Acme, Globex
+# takes the shared standards as-is (no NTP override), so its compliance report
+# shows the golden values unchanged — the contrast makes the shared
+# read-through obvious. Globex users (Keycloak /Globex-Admins -> globex:admin)
+# see only this org and the shared standards.
+schema_version: 2
+
+organization: globex

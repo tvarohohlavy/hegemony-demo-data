@@ -1,0 +1,47 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Globex's plant-floor estate: one manufacturing site with two static,
+# unreachable devices referencing Globex's own SSH secret.
+
+schema_version: 2
+
+sites:
+  - name: Globex Plant 1 - Detroit
+    description: Globex Manufacturing primary plant network.
+    location: detroit
+    tags:
+      env: demo
+      tenant: globex
+      site_type: plant
+
+devices:
+  - name: globex-plant1-core-01
+    mgmt_host: 10.30.0.1
+    vendor: Cisco
+    platform: ios-xe
+    model: C9500-24Y4C
+    current_version: 17.12.4
+    site: Globex Plant 1 - Detroit
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/globex/secrets/plant/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/globex/secrets/plant/ssh/password') }}"
+    tags:
+      role: core
+      tenant: globex
+  - name: globex-plant1-iot-gw-01
+    mgmt_host: 10.30.0.2
+    vendor: Cisco
+    platform: ios-xe
+    model: IR1101
+    current_version: 17.12.4
+    site: Globex Plant 1 - Detroit
+    access_config:
+      ssh:
+        username_ref: "{{ secret('vault://orgs/globex/secrets/plant/ssh/username') }}"
+        password_ref: "{{ secret('vault://orgs/globex/secrets/plant/ssh/password') }}"
+    tags:
+      role: iot-gateway
+      tenant: globex

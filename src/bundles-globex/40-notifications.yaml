@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Globex's own alerting, isolated to the globex org.
+
+schema_version: 2
+
+notification_destinations:
+  - name: "Globex: Plant Ops Email"
+    type: email
+    enabled: true
+    config_json:
+      to:
+        - plantops@globex.example
+      from: hegemony@globex.example
+      smtp_host_ref: "{{ env('HEGEMONY_DEMO_SMTP_HOST', 'demo-notification-smtp') }}"
+      smtp_port_ref: "{{ env('HEGEMONY_DEMO_SMTP_PORT', '1025') }}"
+      smtp_use_tls_ref: "{{ env('HEGEMONY_DEMO_SMTP_USE_TLS', 'false') }}"
+      smtp_use_starttls_ref: "{{ env('HEGEMONY_DEMO_SMTP_USE_STARTTLS', 'false') }}"
+
+flow_subscriptions:
+  - flow: "Globex: Plant standards check"
+    destination: "Globex: Plant Ops Email"
+    event: run.completed
+    enabled: true
