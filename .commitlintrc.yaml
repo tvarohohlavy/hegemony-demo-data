@@ -12,6 +12,8 @@ rules:
     - - bootstrap
       - ci
       - data
+      - demo
       - deps
       - docs
       - release
+      - scripts
