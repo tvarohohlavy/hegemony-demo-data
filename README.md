@@ -12,6 +12,11 @@ This repository owns source YAML fragments and committed generated single-YAML
 bundles. Hegemony can load the generated bundle through its generic instance
 bootstrap path by mounting `dist/` into the API container at `/bootstrap`.
 
+Once it is up, follow the [**guided walkthrough**](docs/walkthrough.md) — a
+scripted tour that logs you in as each persona (Meridian NOC, the Acme and
+Globex tenant admins, a cross-tenant consultant, a compliance auditor) and runs
+flows to exercise the whole platform in the multi-org story.
+
 ## Quickstart: one-command demo
 
 [`install.sh`](install.sh) brings the whole demo up with a single command. It

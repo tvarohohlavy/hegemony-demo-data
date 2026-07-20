@@ -27,6 +27,9 @@ and carries the one platform-global permission override. It imports first, so
 the per-org bundles bind to orgs that already exist and `shared` imports before
 the tenants that reference its golden flow.
 
+For a scripted, click-by-click tour of the story — logging in as each persona
+and running flows — see the [demo walkthrough](walkthrough.md).
+
 Role grants come from the mappings: with `HEGEMONY_ORG_IDP_SYNC` on (set in the
 demo env), a user's Keycloak groups grant the mapped org roles at login. The
 demo realm ships matching groups and users (`meridian-noc`, `acme-admin`,
