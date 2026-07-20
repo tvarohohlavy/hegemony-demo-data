@@ -68,5 +68,5 @@ organizations:
     role: auditor
 permission_overrides:
 - method: POST
-  path: /api/v1/orgs
+  path: /orgs
   policy: admin
