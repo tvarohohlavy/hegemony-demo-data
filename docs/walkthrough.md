@@ -98,10 +98,15 @@ against). They become *reachable* only once the lab is stood up.
 3. When the lab is up, run **"Net: Lab routing health check"** — the run form
    opens with **all eleven lab routers already selected** as targets. It probes
    reachability and asserts OSPF neighbors are Full.
-4. Run **"Ops: Announce service prefix"** — the **core routers are preselected**.
-   It **pauses at a human approval gate** — approve or reject it from the Run
-   detail page (or the Approvals list). Approvals and the run outcome email the
-   NOC.
+4. Run **"Ops: Announce service prefix"** — the **core routers are preselected**,
+   and the loopback / service-address / change-reference fields are **prefilled
+   with defaults** (leave them as-is to accept the defaults, or override). It
+   **pauses at a human approval gate**. As `meridian-noc` (an *operator*) try to
+   approve it: the platform **refuses** — approving requires the `approver` or
+   `admin` role, and operators cannot approve their own work. That is
+   **separation of duties**. To approve, switch to **`admin`** (who holds the
+   approver role) and approve or reject it from the Run detail page (or the
+   Approvals list). Approvals and the run outcome email the NOC.
 5. Run **"Ops: Backup lab configs to Git"** (**all routers preselected**) to push
    device configs to the demo Gitea; the backup manifest records the org
    standards — note it prints `ntp=192.0.2.123`, resolved from the **shared** org
@@ -221,9 +226,10 @@ Log out. Log in as **`compliance`**.
 
 ## Act 8 — Tear it down
 
-Back as an operator in the `default` org, approve the parked teardown gate on
-**"Lab: Provision and tear down demo datacenter"** to destroy the lab cleanly.
-To wipe everything (volumes and all flow containers):
+As **`admin`** in the `default` org (approving needs the `approver`/`admin`
+role — the same separation of duties as Act 2), approve the parked teardown
+gate on **"Lab: Provision and tear down demo datacenter"** to destroy the lab
+cleanly. To wipe everything (volumes and all flow containers):
 
 ```bash
 task compose:demo:reset
@@ -237,7 +243,9 @@ Multiple organizations and tenant isolation · an enabled shared org with golden
 read-through and a differentiation badge · per-org variable override precedence
 · shared-secret cross-org read and tenant secret confinement · IdP
 group→org-role mappings and mixed manual/IdP membership · one user with
-different roles per org · a cross-org auditor · shared **Ansible** and
+different roles per org · a cross-org auditor · **separation of duties**
+(operators run flows but cannot approve them; approving needs the approver or
+admin role) · shared **Ansible** and
 **Terraform** activities executing as the consumer org, driven by mounted file
 attachments and runnable with no inputs · flows with **preselected default
 targets** that survive import as portable device names · a **git inventory
