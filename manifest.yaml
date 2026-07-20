@@ -6,10 +6,14 @@
 # network automation for client tenants. Each org is built into its own
 # single-YAML bundle; the instance bootstrap imports every dist/*.yaml in
 # filename order, so the numeric prefixes sequence the import:
-#   00 organizations  — the org directory (must exist before per-org bundles)
-#   10 default        — Meridian's own environment (the original demo)
-#   20 shared         — Shared Standards (the enabled shared org)
-#   30 acme / 40 globex — two isolated client tenants
+#   00 organizations       — the org directory (must exist before per-org bundles)
+#   05 meridian-inventory  — Meridian's git repos + inventory providers, imported
+#                            ahead of the flows so the bootstrap syncs the git lab
+#                            devices into inventory first; the default-org flows'
+#                            preselected default targets then resolve to real ids
+#   10 default             — Meridian's own environment (the original demo)
+#   20 shared              — Shared Standards (the enabled shared org)
+#   30 acme / 40 globex    — two isolated client tenants
 # Shared imports before the tenants so a tenant flow can reference the shared
 # golden flow by name.
 schema_version: 1
@@ -18,6 +22,10 @@ bundles:
     description: Platform org directory (default + shared + client tenants) with IdP mappings
     source_dir: src/bundles-organizations
     output: dist/00-organizations.single.yaml
+  - id: hegemony-demo-meridian-inventory
+    description: Meridian's git repositories and inventory providers (synced before flows import)
+    source_dir: src/bundles-meridian-inventory
+    output: dist/05-meridian-inventory.single.yaml
   - id: hegemony-demo-default
     description: Meridian Networks — the MSP's own environment (default org)
     source_dir: src/bundles

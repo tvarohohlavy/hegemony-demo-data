@@ -1,0 +1,19 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Meridian's inventory sources, split into their own bundle so they import
+# BEFORE the main default-org bundle (dist/05 sorts ahead of dist/10). The
+# instance bootstrap runs an inventory-provider sync after each bundle, so the
+# git provider's lab devices (dc1-core-01 … br2-acc-01) are materialized into
+# inventory here — before the flows in dist/10 import. That ordering is what
+# lets those flows ship preselected default targets (by portable device name)
+# that resolve to real device ids at import time.
+#
+# `organization: default` binds the git repositories and inventory providers to
+# Meridian Networks; the platform org directory itself lives in the separate
+# `src/bundles-organizations` bundle (dist/00-organizations…), which imports
+# first so the `default` org exists before this bundle references it.
+schema_version: 2
+
+organization: default

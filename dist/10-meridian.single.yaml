@@ -453,49 +453,6 @@ devices:
     env: demo
     region: apac
     hub: syd1
-git_repositories:
-- name: hegemony-demo-data
-  url: https://github.com/tvarohohlavy/hegemony-demo-data.git
-  branch: main
-  sync_stale_seconds: 300
-- name: config-backups
-  url: http://host.docker.internal:3000/meridian/config-backups.git
-  branch: main
-  sync_stale_seconds: 60
-  allow_insecure_url: true
-inventory_providers:
-- name: lab-inventory
-  provider_type: git
-  enabled: true
-  description: Meridian lab routers, read from demo-inventory/ in the public demo repo.
-  config:
-    git_repository: hegemony-demo-data
-    branch: main
-    path: demo-inventory
-    default_access_config:
-      ssh:
-        username_ref: '{{ secret(''vault://orgs/default/secrets/meridian/lab/ssh/username'') }}'
-        password_ref: '{{ secret(''vault://orgs/default/secrets/meridian/lab/ssh/password'') }}'
-    query_cache_ttl_seconds: 60
-- name: netbox-example
-  provider_type: netbox
-  enabled: false
-  description: Example NetBox provider wiring (disabled by default).
-  config:
-    url: http://host.docker.internal:8001/
-    token_ref: '{{ secret(''vault://orgs/default/secrets/meridian/integrations/netbox/token'') }}'
-    auth_scheme: Bearer
-    verify_tls: false
-- name: infrahub-example
-  provider_type: infrahub
-  enabled: false
-  description: Example Infrahub provider wiring (disabled by default).
-  config:
-    url: https://infrahub.meridian.invalid
-    token_ref: '{{ env(''HEGEMONY_DEMO_INFRAHUB_TOKEN'') }}'
-    verify_tls: true
-    branch: main
-    device_kind: InfraDevice
 flows:
 - name: 'Lab: Provision and tear down demo datacenter'
   description: Build the lab images, deploy the multi-area OSPF lab (11 routers and 4 Linux endpoint hosts across dc1, dc2
@@ -965,7 +922,19 @@ flows:
           field_id: targets
           field_type: inventory.device
           required: true
-          description: Devices to back up (pick the lab routers).
+          description: Devices to back up — the lab routers, preselected.
+          default_value:
+          - dc1-core-01
+          - dc1-core-02
+          - dc1-acc-01
+          - dc1-acc-02
+          - dc2-core-01
+          - dc2-core-02
+          - dc2-acc-01
+          - br1-edge-01
+          - br1-acc-01
+          - br2-edge-01
+          - br2-acc-01
           config:
             role: backup_targets
             multiple: true
@@ -1197,7 +1166,12 @@ flows:
           field_id: targets
           field_type: inventory.device
           required: true
-          description: Routers to advertise the service prefix on.
+          description: Routers to advertise the service prefix on — the core, preselected.
+          default_value:
+          - dc1-core-01
+          - dc1-core-02
+          - dc2-core-01
+          - dc2-core-02
           config:
             role: announce_targets
             multiple: true
@@ -1478,7 +1452,19 @@ flows:
           field_id: targets
           field_type: inventory.device
           required: true
-          description: Routers to health-check.
+          description: Routers to health-check — the whole lab fabric, preselected.
+          default_value:
+          - dc1-core-01
+          - dc1-core-02
+          - dc1-acc-01
+          - dc1-acc-02
+          - dc2-core-01
+          - dc2-core-02
+          - dc2-acc-01
+          - br1-edge-01
+          - br1-acc-01
+          - br2-edge-01
+          - br2-acc-01
           config:
             role: health_targets
             multiple: true
@@ -1622,7 +1608,12 @@ flows:
           field_id: sources
           field_type: inventory.device
           required: true
-          description: Pick one or more lab endpoint hosts (role server).
+          description: Lab endpoint hosts (role server) to probe from — preselected.
+          default_value:
+          - dc1-srv-01
+          - dc2-srv-01
+          - br1-srv-01
+          - br2-srv-01
           config:
             role: probe_sources
             multiple: true

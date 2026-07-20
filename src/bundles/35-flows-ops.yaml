@@ -178,7 +178,22 @@ flows:
               field_id: targets
               field_type: inventory.device
               required: true
-              description: Devices to back up (pick the lab routers).
+              description: Devices to back up — the lab routers, preselected.
+              # Preselected default targets: the run form opens with every lab
+              # router already selected (portable device names resolved to ids
+              # on import, once the git provider sync has materialized them).
+              default_value:
+                - dc1-core-01
+                - dc1-core-02
+                - dc1-acc-01
+                - dc1-acc-02
+                - dc2-core-01
+                - dc2-core-02
+                - dc2-acc-01
+                - br1-edge-01
+                - br1-acc-01
+                - br2-edge-01
+                - br2-acc-01
               config:
                 role: backup_targets
                 multiple: true
@@ -422,7 +437,14 @@ flows:
               field_id: targets
               field_type: inventory.device
               required: true
-              description: Routers to advertise the service prefix on.
+              description: Routers to advertise the service prefix on — the core, preselected.
+              # Preselected default targets: the lab core routers ship already
+              # selected (portable device names resolved to ids on import).
+              default_value:
+                - dc1-core-01
+                - dc1-core-02
+                - dc2-core-01
+                - dc2-core-02
               config:
                 role: announce_targets
                 multiple: true
@@ -708,7 +730,21 @@ flows:
               field_id: targets
               field_type: inventory.device
               required: true
-              description: Routers to health-check.
+              description: Routers to health-check — the whole lab fabric, preselected.
+              # Preselected default targets: every lab router ships already
+              # selected (portable device names resolved to ids on import).
+              default_value:
+                - dc1-core-01
+                - dc1-core-02
+                - dc1-acc-01
+                - dc1-acc-02
+                - dc2-core-01
+                - dc2-core-02
+                - dc2-acc-01
+                - br1-edge-01
+                - br1-acc-01
+                - br2-edge-01
+                - br2-acc-01
               config:
                 role: health_targets
                 multiple: true
@@ -857,7 +893,14 @@ flows:
               field_id: sources
               field_type: inventory.device
               required: true
-              description: Pick one or more lab endpoint hosts (role server).
+              description: Lab endpoint hosts (role server) to probe from — preselected.
+              # Preselected default targets: the lab endpoint hosts ship already
+              # selected (portable device names resolved to ids on import).
+              default_value:
+                - dc1-srv-01
+                - dc2-srv-01
+                - br1-srv-01
+                - br2-srv-01
               config:
                 role: probe_sources
                 multiple: true

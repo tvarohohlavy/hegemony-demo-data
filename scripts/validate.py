@@ -78,6 +78,8 @@ class Validator:
         *,
         shared_variables: set[str] | None = None,
         shared_secret_paths: set[str] | None = None,
+        sibling_variables: set[str] | None = None,
+        sibling_secret_paths: set[str] | None = None,
     ) -> None:
         self.bundle_id = bundle_id
         self.bundle = bundle
@@ -89,6 +91,15 @@ class Validator:
         # reference to some *other* tenant's resource still fails.
         self.shared_variables = shared_variables or set()
         self.shared_secret_paths = shared_secret_paths or set()
+        # A single org's resources can be split across sibling bundles that all
+        # import into the same instance (e.g. Meridian's inventory providers in
+        # one bundle referencing SSH secrets defined in another). Those siblings
+        # share the instance Vault and variable store, so a bundle may reference
+        # a variable/secret any same-organization sibling defines. Cross-tenant
+        # references still fail: only bundles carrying the *same* organization
+        # slug contribute here.
+        self.sibling_variables = sibling_variables or set()
+        self.sibling_secret_paths = sibling_secret_paths or set()
 
     def error(self, message: str) -> None:
         self.errors.append(f"{self.bundle_id}: {message}")
@@ -104,7 +115,9 @@ class Validator:
         self._validate_devices(site_paths)
         self._validate_flow_references(flow_names)
         self._validate_subscription_references(flow_names, destination_names)
-        self._validate_template_references(secret_paths | self.shared_secret_paths)
+        self._validate_template_references(
+            secret_paths | self.shared_secret_paths | self.sibling_secret_paths
+        )
         self._validate_ref_fields()
         self._validate_handlers()
         return self.errors
@@ -257,7 +270,7 @@ class Validator:
                 )
 
     def _validate_template_references(self, secret_paths: set[str]) -> None:
-        variables = self._names("variables") | self.shared_variables
+        variables = self._names("variables") | self.shared_variables | self.sibling_variables
         for location, value in self._walk_strings(self.bundle):
             for match in SECRET_CALL_RE.finditer(value):
                 ref = match.group(1)
@@ -446,6 +459,37 @@ def _collect_secret_paths(bundle: dict[str, Any]) -> set[str]:
     return paths
 
 
+def _collect_variable_names(bundle: dict[str, Any]) -> set[str]:
+    """Variable names defined by a bundle's variables section."""
+    return {
+        v.get("name")
+        for v in bundle.get("variables", []) or []
+        if isinstance(v, dict) and isinstance(v.get("name"), str) and v.get("name")
+    }
+
+
+def _same_org_universe(
+    merged_bundles: dict[str, dict[str, Any]],
+) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    """Aggregate variables and secret paths per organization slug.
+
+    A single org's resources may be split across sibling bundles that all import
+    into the same instance; they share one Vault and one variable store. Return
+    (org_variables, org_secret_paths) keyed by organization slug so a bundle can
+    resolve references any same-org sibling defines. Bundles without an
+    ``organization`` slug are grouped under the empty string and only see each
+    other — never a named tenant's resources.
+    """
+    org_variables: dict[str, set[str]] = {}
+    org_secret_paths: dict[str, set[str]] = {}
+    for bundle in merged_bundles.values():
+        slug = bundle.get("organization")
+        key = slug if isinstance(slug, str) else ""
+        org_variables.setdefault(key, set()).update(_collect_variable_names(bundle))
+        org_secret_paths.setdefault(key, set()).update(_collect_secret_paths(bundle))
+    return org_variables, org_secret_paths
+
+
 def _shared_reference_universe(
     merged_bundles: dict[str, dict[str, Any]],
 ) -> tuple[str | None, set[str], set[str]]:
@@ -490,6 +534,7 @@ def main() -> int:
         # bundle that references shared variables/secrets.
         merged_all = {config.id: merge_fragments(config) for config in load_manifest()}
         shared_slug, shared_vars, shared_secrets = _shared_reference_universe(merged_all)
+        org_vars, org_secrets = _same_org_universe(merged_all)
 
         errors: list[str] = []
         for config in configs:
@@ -497,12 +542,16 @@ def main() -> int:
             # The shared bundle validates against only its own resources — it
             # cannot read other orgs.
             is_shared_bundle = merged.get("organization") == shared_slug
+            org_key = merged.get("organization")
+            org_key = org_key if isinstance(org_key, str) else ""
             errors.extend(
                 Validator(
                     config.id,
                     merged,
                     shared_variables=set() if is_shared_bundle else shared_vars,
                     shared_secret_paths=set() if is_shared_bundle else shared_secrets,
+                    sibling_variables=org_vars.get(org_key, set()),
+                    sibling_secret_paths=org_secrets.get(org_key, set()),
                 ).validate()
             )
         errors.extend(validate_inventory_tree(ROOT / "demo-inventory"))

@@ -81,6 +81,13 @@ Playing **`admin`** (Meridian's platform administrator).
 Switch the org picker to **Meridian Networks (`default`)** (still as `admin`, or
 log in as **`meridian-noc`** / the original `operator`).
 
+Open **Inventory → Devices** first: the fifteen lab devices (`dc1-core-01` …
+`br2-srv-01`) are **already there**. The `lab-inventory` git provider is synced
+at first boot — the instance bootstrap imports the provider, then materializes
+its devices into inventory *before* the flows import — so the lab flows below
+open with their targets **already preselected** (the devices exist to resolve
+against). They become *reachable* only once the lab is stood up.
+
 1. **Flows → "Lab: Provision and tear down demo datacenter" → Run.** This builds
    the images and stands up the containerlab (eleven FRR routers, a Gitea, and
    the endpoint hosts). It parks at an approval gate at the end so the lab stays
@@ -88,20 +95,23 @@ log in as **`meridian-noc`** / the original `operator`).
    port your env prints).
 2. While it runs, watch the **Run detail** graph: parallel branches, live step
    events, and the container steps executing.
-3. When the lab is up, run **"Net: Lab routing health check"** against the four
-   synced lab routers (pick them as targets). It probes reachability and asserts
-   OSPF neighbors are Full.
-4. Run **"Ops: Announce service prefix"**. It **pauses at a human approval
-   gate** — approve or reject it from the Run detail page (or the Approvals
-   list). Approvals and the run outcome email the NOC.
-5. Run **"Ops: Backup lab configs to Git"** to push device configs to the demo
-   Gitea; the backup manifest records the org standards — note it prints
-   `ntp=192.0.2.123`, resolved from the **shared** org (see Act 4 for the
-   contrast).
+3. When the lab is up, run **"Net: Lab routing health check"** — the run form
+   opens with **all eleven lab routers already selected** as targets. It probes
+   reachability and asserts OSPF neighbors are Full.
+4. Run **"Ops: Announce service prefix"** — the **core routers are preselected**.
+   It **pauses at a human approval gate** — approve or reject it from the Run
+   detail page (or the Approvals list). Approvals and the run outcome email the
+   NOC.
+5. Run **"Ops: Backup lab configs to Git"** (**all routers preselected**) to push
+   device configs to the demo Gitea; the backup manifest records the org
+   standards — note it prints `ntp=192.0.2.123`, resolved from the **shared** org
+   (see Act 4 for the contrast). And **"Net: End-to-end reachability test"** opens
+   with the four **endpoint hosts preselected** as probe sources.
 
-> **Feature:** the containerlab, parallel flow execution, approval gates,
-> notifications, git-backed backups, and shared-variable resolution for the
-> MSP's own org.
+> **Feature:** a git inventory provider synced at bootstrap so its devices are
+> present from first boot, the MSP's own lab flows with **preselected default
+> targets**, the containerlab, parallel flow execution, approval gates,
+> notifications, git-backed backups, and shared-variable resolution.
 
 ---
 
@@ -230,7 +240,9 @@ group→org-role mappings and mixed manual/IdP membership · one user with
 different roles per org · a cross-org auditor · shared **Ansible** and
 **Terraform** activities executing as the consumer org, driven by mounted file
 attachments and runnable with no inputs · flows with **preselected default
-targets** that survive import as portable device names · the containerlab,
+targets** that survive import as portable device names · a **git inventory
+provider synced at bootstrap** so its lab devices are present before the flows
+that target them import · the containerlab,
 parallel execution,
 approval gates, notifications, git backups, file repositories, and inventory
 providers.
