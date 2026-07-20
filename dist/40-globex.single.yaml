@@ -67,14 +67,20 @@ flows:
         handler: container.run
         position_x: 320
         position_y: 120
+        mounted_files:
+        - report.sh
         params:
           image: alpine:3.20
           working_dir: /workspace
           timeout_seconds: 120
           command:
-          - "set -e\nmkdir -p /artifacts/new\n{\n  printf 'Tenant: %s\\n' \"{{ vars.TENANT_NAME }}\"\n  printf 'Effective\
-            \ NTP (shared)    : %s\\n' \"{{ vars.NTP_PRIMARY }}\"\n  printf 'Effective DNS (shared)    : %s\\n' \"{{ vars.DNS_PRIMARY\
-            \ }}\"\n  printf 'Effective syslog (shared) : %s\\n' \"{{ vars.SYSLOG_PRIMARY }}\"\n} | tee /artifacts/new/globex-standards.txt\n"
+          - sh /attachments/report.sh
+          env:
+            REPORT_NAME: globex-standards
+            TENANT_NAME: '{{ vars.TENANT_NAME }}'
+            NTP_PRIMARY: '{{ vars.NTP_PRIMARY }}'
+            DNS_PRIMARY: '{{ vars.DNS_PRIMARY }}'
+            SYSLOG_PRIMARY: '{{ vars.SYSLOG_PRIMARY }}'
         policy:
           timeout_sec: 150
           retries: 0
@@ -96,6 +102,20 @@ flows:
     interface_graph:
       nodes: []
       edges: []
+flow_attachments:
+- flow: 'Globex: Plant standards check'
+  filename: report.sh
+  content: "#!/bin/sh\n# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier:\
+    \ AGPL-3.0-or-later\n#\n# Render an organization's effective network standards into a run artifact.\n# Mounted into the\
+    \ container at /attachments and run as-is; all the org-specific\n# values arrive as environment variables the flow resolves\
+    \ from {{ vars.* }} and\n# {{ secret(...) }}, so this one script serves the shared, Acme and Globex\n# standards flows\
+    \ unchanged.\nset -eu\n\nmkdir -p /artifacts/new\nREPORT=\"/artifacts/new/${REPORT_NAME:-standards}.txt\"\n\n{\n  printf\
+    \ 'Effective network standards\\n'\n  printf 'Organization : %s\\n' \"${TENANT_NAME:-unknown}\"\n  printf 'Curated by\
+    \   : %s\\n' \"${STANDARDS_OWNER:-Meridian Shared Standards}\"\n  printf '  NTP primary    : %s\\n' \"${NTP_PRIMARY:-<unset>}\"\
+    \n  printf '  DNS primary    : %s\\n' \"${DNS_PRIMARY:-<unset>}\"\n  printf '  Syslog primary : %s\\n' \"${SYSLOG_PRIMARY:-<unset>}\"\
+    \n  if [ -n \"${APPROVED_CONTAINER_IMAGES:-}\" ]; then\n    printf '  Approved images: %s\\n' \"${APPROVED_CONTAINER_IMAGES}\"\
+    \n  fi\n  if [ -n \"${MON_TOKEN:-}\" ]; then\n    printf '  Monitoring token: present (shared, masked)\\n'\n  fi\n} |\
+    \ tee \"${REPORT}\"\n"
 variables:
 - name: TENANT_NAME
   value: Globex Manufacturing

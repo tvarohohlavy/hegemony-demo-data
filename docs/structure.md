@@ -17,7 +17,7 @@ network automation both for itself and for client tenants:
 | Org | Slug | Who | Bundle |
 | --- | --- | --- | --- |
 | Meridian Networks | `default` | The MSP's own network (the original containerlab demo) | `src/bundles` → `dist/10-meridian…` |
-| Shared Standards | `shared` | The **enabled shared org** — golden baseline every org reads read-only | `src/bundles-shared` → `dist/20-…` |
+| Shared Standards | `shared` | The **enabled shared org** — golden baseline plus golden compliance / Ansible / Terraform flows every org reads read-only and runs | `src/bundles-shared` → `dist/20-…` |
 | Acme Retail | `acme` | Isolated client tenant; overrides the shared NTP standard | `src/bundles-acme` → `dist/30-…` |
 | Globex Manufacturing | `globex` | Isolated client tenant; inherits the shared standards unchanged | `src/bundles-globex` → `dist/40-…` |
 

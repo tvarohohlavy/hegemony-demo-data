@@ -22,8 +22,16 @@ notification_destinations:
       smtp_use_starttls_ref: "{{ env('HEGEMONY_DEMO_SMTP_USE_STARTTLS', 'false') }}"
 
 flow_subscriptions:
-  # Meridian is alerted whenever a compliance baseline run fails, in any org.
+  # Meridian is alerted whenever a golden-flow run fails, in any org.
   - flow: "Shared: Compliance baseline report"
+    destination: "Shared: Platform NOC Email"
+    event: run.failed
+    enabled: true
+  - flow: "Shared: Ansible config audit"
+    destination: "Shared: Platform NOC Email"
+    event: run.failed
+    enabled: true
+  - flow: "Shared: Terraform network baseline plan"
     destination: "Shared: Platform NOC Email"
     event: run.failed
     enabled: true

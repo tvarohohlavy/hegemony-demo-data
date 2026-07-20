@@ -115,10 +115,22 @@ Still as **`meridian-noc`**, switch the org picker to **Shared Standards
 2. **Secrets** — a read-only `shared-monitoring-token` under
    `orgs/shared/secrets/…`.
 3. **File Repositories** — the shared **Golden Artifacts** object store.
-4. **Flows** — the **"Shared: Compliance baseline report"** flow.
+4. **Flows** — three golden flows Meridian publishes for every tenant, each
+   **runnable with no form input**:
+   - **"Shared: Compliance baseline report"** — a shell step that renders the
+     effective standards,
+   - **"Shared: Ansible config audit"** — an **Ansible** playbook (localhost)
+     that asserts the standards are set and writes a PASS/FAIL report,
+   - **"Shared: Terraform network baseline plan"** — a provider-less
+     **Terraform** init + plan that renders the baseline as a plan output.
 
-> **Feature:** the shared org is a normal, editable org *for its own members*;
-> everyone else only reads it.
+   Each container step carries **no inline script**: it mounts a file
+   attachment (the playbook, the `.tf`, the report script) and passes every
+   value as an environment variable — open a step to see the mounted files.
+
+> **Feature:** the shared org is a normal, editable org *for its own members*
+> while everyone else only reads it — and golden **Ansible** and **Terraform**
+> activities driven by mounted file attachments, runnable with zero inputs.
 
 ---
 
@@ -134,10 +146,12 @@ Log out. Log in as **`acme-admin`**.
    - `NTP` resolves to **`10.20.0.123`** — Acme's store-local override,
    - `DNS` / `syslog` fall through to the **shared** golden values.
    **Per-org variable precedence**, live.
-4. Now run the **shared** flow from Acme: **"Shared: Compliance baseline report"**
-   (it carries a **Shared** badge in the list). It runs **as Acme**, so the
-   report again shows Acme's NTP override while reading the shared DNS/syslog and
-   the shared monitoring token. **A shared flow executing as the consumer org.**
+4. Now run a **shared** flow from Acme — try **"Shared: Ansible config audit"**
+   or **"Shared: Terraform network baseline plan"** (both carry a **Shared**
+   badge, and both run with **no inputs**). They run **as Acme**, so the Ansible
+   report and the Terraform plan output both show Acme's NTP override while
+   reading the shared DNS/syslog. **A shared Ansible/Terraform activity executing
+   as the consumer org.**
 5. Open a flow's config field and use the **variable picker** (the `{{ }}`
    button): the shared golden variables appear, marked as belonging to the
    shared organization.
@@ -210,6 +224,8 @@ Multiple organizations and tenant isolation · an enabled shared org with golden
 read-through and a differentiation badge · per-org variable override precedence
 · shared-secret cross-org read and tenant secret confinement · IdP
 group→org-role mappings and mixed manual/IdP membership · one user with
-different roles per org · a cross-org auditor · a shared flow executing as the
-consumer org · the containerlab, parallel execution, approval gates,
-notifications, git backups, file repositories, and inventory providers.
+different roles per org · a cross-org auditor · shared **Ansible** and
+**Terraform** activities executing as the consumer org, driven by mounted file
+attachments and runnable with no inputs · the containerlab, parallel execution,
+approval gates, notifications, git backups, file repositories, and inventory
+providers.

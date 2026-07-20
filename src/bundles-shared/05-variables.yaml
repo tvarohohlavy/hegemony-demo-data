@@ -30,3 +30,9 @@ variables:
   - name: STANDARDS_OWNER
     value: Meridian Shared Standards
     description: Curator of the golden baseline, stamped into shared-flow output.
+  - name: TENANT_NAME
+    value: Shared Standards
+    description: >-
+      Display name of the org running a shared flow. A golden default each
+      tenant overrides (Acme Retail, Globex Manufacturing), so a shared flow
+      run by a tenant labels itself with the consumer org's name.

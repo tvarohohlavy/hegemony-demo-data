@@ -12,8 +12,8 @@ secrets:
     token: demo-shared-monitoring-readonly-token
 flows:
 - name: 'Shared: Compliance baseline report'
-  description: Render this organization's effective network standards (NTP/DNS/syslog, approved images) into an artifact,
-    proving which values resolve for the org that runs it. Published by Meridian in the shared org; runnable by every tenant.
+  description: Render this organization's effective network standards into an artifact, proving which values resolve for the
+    org that runs it. Runnable by every tenant with no inputs.
   definition:
     graph:
       nodes:
@@ -30,20 +30,23 @@ flows:
         handler: container.run
         position_x: 320
         position_y: 120
+        mounted_files:
+        - report.sh
         params:
           image: alpine:3.20
           working_dir: /workspace
           timeout_seconds: 120
-          env:
-            MON_TOKEN: '{{ secret(''vault://orgs/shared/secrets/standards/monitoring/token'') }}'
           command:
-          - "set -e\nmkdir -p /artifacts/new\nREPORT=/artifacts/new/compliance-baseline.txt\n{\n  printf 'Compliance baseline\
-            \ — curated by %s\\n' \"{{ vars.STANDARDS_OWNER }}\"\n  printf 'Effective standards for the running organization:\\\
-            n'\n  printf '  NTP primary    : %s\\n' \"{{ vars.NTP_PRIMARY }}\"\n  printf '  DNS primary    : %s\\n' \"{{ vars.DNS_PRIMARY\
-            \ }}\"\n  printf '  Syslog primary : %s\\n' \"{{ vars.SYSLOG_PRIMARY }}\"\n  printf '  Approved images: %s\\n'\
-            \ \"{{ vars.APPROVED_CONTAINER_IMAGES }}\"\n  if [ -n \"${MON_TOKEN}\" ]; then\n    printf '  Monitoring token:\
-            \ present (shared, masked)\\n'\n  else\n    printf '  Monitoring token: MISSING\\n'\n  fi\n} | tee \"${REPORT}\"\
-            \n"
+          - sh /attachments/report.sh
+          env:
+            REPORT_NAME: compliance-baseline
+            TENANT_NAME: '{{ vars.TENANT_NAME }}'
+            STANDARDS_OWNER: '{{ vars.STANDARDS_OWNER }}'
+            NTP_PRIMARY: '{{ vars.NTP_PRIMARY }}'
+            DNS_PRIMARY: '{{ vars.DNS_PRIMARY }}'
+            SYSLOG_PRIMARY: '{{ vars.SYSLOG_PRIMARY }}'
+            APPROVED_CONTAINER_IMAGES: '{{ vars.APPROVED_CONTAINER_IMAGES }}'
+            MON_TOKEN: '{{ secret(''vault://orgs/shared/secrets/standards/monitoring/token'') }}'
         policy:
           timeout_sec: 150
           retries: 0
@@ -65,6 +68,219 @@ flows:
     interface_graph:
       nodes: []
       edges: []
+- name: 'Shared: Ansible config audit'
+  description: Run an Ansible playbook (localhost, no devices needed) that asserts the organization's golden standards are
+    all defined and writes a PASS/FAIL audit report. Demonstrates an Ansible activity; runnable by every tenant.
+  definition:
+    graph:
+      nodes:
+      - id: start
+        name: Start
+        type: start
+        position_x: 0
+        position_y: 120
+      - id: audit
+        name: ansible-playbook audit
+        type: step
+        kind: EXECUTE
+        phase: VERIFY
+        handler: container.run
+        position_x: 320
+        position_y: 120
+        mounted_files:
+        - audit.yml
+        - run.sh
+        params:
+          image: alpine:3.20
+          working_dir: /workspace
+          timeout_seconds: 240
+          command:
+          - sh /attachments/run.sh
+          env:
+            TENANT_NAME: '{{ vars.TENANT_NAME }}'
+            NTP_PRIMARY: '{{ vars.NTP_PRIMARY }}'
+            DNS_PRIMARY: '{{ vars.DNS_PRIMARY }}'
+            SYSLOG_PRIMARY: '{{ vars.SYSLOG_PRIMARY }}'
+        policy:
+          timeout_sec: 300
+          retries: 0
+          on_failure: FAIL_RUN
+          evidence_required: true
+      - id: done
+        name: Audit passed
+        type: terminal
+        terminal_status: success
+        position_x: 640
+        position_y: 120
+      edges:
+      - id: e_start_audit
+        source: start:start
+        target: audit
+      - id: e_audit_done
+        source: audit:success
+        target: done
+    interface_graph:
+      nodes: []
+      edges: []
+- name: 'Shared: Terraform network baseline plan'
+  description: Run a provider-less Terraform init + plan that renders the organization's effective network baseline as a plan
+    output. Demonstrates a Terraform activity offline (no cloud credentials); runnable by every tenant.
+  definition:
+    graph:
+      nodes:
+      - id: start
+        name: Start
+        type: start
+        position_x: 0
+        position_y: 120
+      - id: plan
+        name: terraform init + plan
+        type: step
+        kind: EXECUTE
+        phase: PREPARE
+        handler: container.run
+        position_x: 320
+        position_y: 120
+        mounted_files:
+        - main.tf
+        - run.sh
+        params:
+          image: hashicorp/terraform:1.9
+          entrypoint: /bin/sh
+          working_dir: /workspace
+          timeout_seconds: 240
+          command:
+          - sh /attachments/run.sh
+          env:
+            TF_VAR_tenant: '{{ vars.TENANT_NAME }}'
+            TF_VAR_ntp_primary: '{{ vars.NTP_PRIMARY }}'
+            TF_VAR_dns_primary: '{{ vars.DNS_PRIMARY }}'
+            TF_VAR_syslog_primary: '{{ vars.SYSLOG_PRIMARY }}'
+        policy:
+          timeout_sec: 300
+          retries: 0
+          on_failure: FAIL_RUN
+          evidence_required: true
+      - id: done
+        name: Plan generated
+        type: terminal
+        terminal_status: success
+        position_x: 640
+        position_y: 120
+      edges:
+      - id: e_start_plan
+        source: start:start
+        target: plan
+      - id: e_plan_done
+        source: plan:success
+        target: done
+    interface_graph:
+      nodes: []
+      edges: []
+flow_attachments:
+- flow: 'Shared: Compliance baseline report'
+  filename: report.sh
+  content: "#!/bin/sh\n# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier:\
+    \ AGPL-3.0-or-later\n#\n# Render an organization's effective network standards into a run artifact.\n# Mounted into the\
+    \ container at /attachments and run as-is; all the org-specific\n# values arrive as environment variables the flow resolves\
+    \ from {{ vars.* }} and\n# {{ secret(...) }}, so this one script serves the shared, Acme and Globex\n# standards flows\
+    \ unchanged.\nset -eu\n\nmkdir -p /artifacts/new\nREPORT=\"/artifacts/new/${REPORT_NAME:-standards}.txt\"\n\n{\n  printf\
+    \ 'Effective network standards\\n'\n  printf 'Organization : %s\\n' \"${TENANT_NAME:-unknown}\"\n  printf 'Curated by\
+    \   : %s\\n' \"${STANDARDS_OWNER:-Meridian Shared Standards}\"\n  printf '  NTP primary    : %s\\n' \"${NTP_PRIMARY:-<unset>}\"\
+    \n  printf '  DNS primary    : %s\\n' \"${DNS_PRIMARY:-<unset>}\"\n  printf '  Syslog primary : %s\\n' \"${SYSLOG_PRIMARY:-<unset>}\"\
+    \n  if [ -n \"${APPROVED_CONTAINER_IMAGES:-}\" ]; then\n    printf '  Approved images: %s\\n' \"${APPROVED_CONTAINER_IMAGES}\"\
+    \n  fi\n  if [ -n \"${MON_TOKEN:-}\" ]; then\n    printf '  Monitoring token: present (shared, masked)\\n'\n  fi\n} |\
+    \ tee \"${REPORT}\"\n"
+- flow: 'Shared: Ansible config audit'
+  filename: audit.yml
+  content: "# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier: AGPL-3.0-or-later\n\
+    #\n# Golden config-audit playbook. It runs against localhost (no network devices\n# needed), reads the organization's\
+    \ effective standards from the environment\n# the flow resolves from {{ vars.* }}, asserts they are all defined, and writes\n\
+    # a PASS/FAIL audit report into the run artifacts. Mounted into the container\n# at /attachments and executed by run.sh.\n\
+    - name: Meridian golden config audit\n  hosts: localhost\n  connection: local\n  gather_facts: false\n  vars:\n    tenant:\
+    \ \"{{ lookup('env', 'TENANT_NAME') | default('unknown', true) }}\"\n    ntp: \"{{ lookup('env', 'NTP_PRIMARY') }}\"\n\
+    \    dns: \"{{ lookup('env', 'DNS_PRIMARY') }}\"\n    syslog: \"{{ lookup('env', 'SYSLOG_PRIMARY') }}\"\n  tasks:\n  \
+    \  - name: Ensure the artifact directory exists\n      ansible.builtin.file:\n        path: /artifacts/new\n        state:\
+    \ directory\n        mode: \"0755\"\n\n    - name: Assert the golden standards are all defined\n      ansible.builtin.assert:\n\
+    \        that:\n          - ntp | length > 0\n          - dns | length > 0\n          - syslog | length > 0\n        success_msg:\
+    \ \"All golden standards are present for {{ tenant }}.\"\n        fail_msg: \"One or more golden standards is unset for\
+    \ {{ tenant }}.\"\n\n    - name: Render the audit report\n      ansible.builtin.copy:\n        dest: /artifacts/new/ansible-audit.txt\n\
+    \        mode: \"0644\"\n        content: |\n          Ansible golden config audit — {{ tenant }}\n          NTP primary\
+    \    : {{ ntp }}\n          DNS primary    : {{ dns }}\n          Syslog primary : {{ syslog }}\n          Result    \
+    \     : PASS (all standards present)\n"
+- flow: 'Shared: Ansible config audit'
+  filename: run.sh
+  content: '#!/bin/sh
+
+    # SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
+
+    # SPDX-License-Identifier: AGPL-3.0-or-later
+
+    #
+
+    # Install ansible-core into the throwaway alpine container and run the golden
+
+    # config-audit playbook against localhost. Kept in a mounted file so the flow
+
+    # step carries no inline script; all inputs arrive as environment variables.
+
+    set -eu
+
+
+    apk add --no-cache ansible-core >/dev/null
+
+    mkdir -p /artifacts/new
+
+    ansible-playbook -i ''localhost,'' -c local /attachments/audit.yml
+
+    '
+- flow: 'Shared: Terraform network baseline plan'
+  filename: main.tf
+  content: "# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier: AGPL-3.0-or-later\n\
+    #\n# Provider-less Terraform config: it declares no providers and no backend, so\n# `terraform init` downloads nothing\
+    \ and `terraform plan` runs fully offline\n# after the image is pulled. It renders the organization's effective network\n\
+    # baseline (read from TF_VAR_* the flow resolves from {{ vars.* }}) as a plan\n# output — a self-contained showcase of\
+    \ a Terraform activity.\n\nvariable \"tenant\" {\n  type    = string\n  default = \"unknown\"\n}\n\nvariable \"ntp_primary\"\
+    \ {\n  type    = string\n  default = \"\"\n}\n\nvariable \"dns_primary\" {\n  type    = string\n  default = \"\"\n}\n\n\
+    variable \"syslog_primary\" {\n  type    = string\n  default = \"\"\n}\n\nlocals {\n  network_baseline = {\n    tenant\
+    \ = var.tenant\n    ntp    = var.ntp_primary\n    dns    = var.dns_primary\n    syslog = var.syslog_primary\n  }\n}\n\n\
+    output \"network_baseline\" {\n  description = \"Effective network standards for the organization running this plan.\"\
+    \n  value       = local.network_baseline\n}\n"
+- flow: 'Shared: Terraform network baseline plan'
+  filename: run.sh
+  content: '#!/bin/sh
+
+    # SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
+
+    # SPDX-License-Identifier: AGPL-3.0-or-later
+
+    #
+
+    # Run a Terraform init + plan for the provider-less network-baseline config and
+
+    # capture the human-readable plan into the run artifacts. The hashicorp/terraform
+
+    # image''s entrypoint is `terraform`, so the flow step sets entrypoint: /bin/sh to
+
+    # run this script. Inputs arrive as TF_VAR_* environment variables.
+
+    set -eu
+
+
+    mkdir -p /workspace /artifacts/new
+
+    cp /attachments/main.tf /workspace/main.tf
+
+    cd /workspace
+
+
+    terraform init -input=false -no-color
+
+    terraform plan -input=false -no-color -out=baseline.tfplan
+
+    terraform show -no-color baseline.tfplan | tee /artifacts/new/terraform-plan.txt
+
+    '
 variables:
 - name: NTP_PRIMARY
   value: 192.0.2.123
@@ -81,6 +297,10 @@ variables:
 - name: STANDARDS_OWNER
   value: Meridian Shared Standards
   description: Curator of the golden baseline, stamped into shared-flow output.
+- name: TENANT_NAME
+  value: Shared Standards
+  description: Display name of the org running a shared flow. A golden default each tenant overrides (Acme Retail, Globex
+    Manufacturing), so a shared flow run by a tenant labels itself with the consumer org's name.
 file_repositories:
 - name: Golden Artifacts
   kind: s3
@@ -102,6 +322,14 @@ notification_destinations:
     smtp_use_starttls_ref: '{{ env(''HEGEMONY_DEMO_SMTP_USE_STARTTLS'', ''false'') }}'
 flow_subscriptions:
 - flow: 'Shared: Compliance baseline report'
+  destination: 'Shared: Platform NOC Email'
+  event: run.failed
+  enabled: true
+- flow: 'Shared: Ansible config audit'
+  destination: 'Shared: Platform NOC Email'
+  event: run.failed
+  enabled: true
+- flow: 'Shared: Terraform network baseline plan'
   destination: 'Shared: Platform NOC Email'
   event: run.failed
   enabled: true

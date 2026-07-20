@@ -3,7 +3,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Globex's own standards check. With no override, every value resolves to the
-# shared golden standard — the contrast with Acme's overridden NTP.
+# shared golden standard — the contrast with Acme. Mounts the same report
+# script (no inline command); device-less, runs with no form input.
 
 schema_version: 2
 
@@ -28,20 +29,20 @@ flows:
             handler: container.run
             position_x: 320
             position_y: 120
+            mounted_files:
+              - report.sh
             params:
               image: alpine:3.20
               working_dir: /workspace
               timeout_seconds: 120
               command:
-                - |
-                  set -e
-                  mkdir -p /artifacts/new
-                  {
-                    printf 'Tenant: %s\n' "{{ vars.TENANT_NAME }}"
-                    printf 'Effective NTP (shared)    : %s\n' "{{ vars.NTP_PRIMARY }}"
-                    printf 'Effective DNS (shared)    : %s\n' "{{ vars.DNS_PRIMARY }}"
-                    printf 'Effective syslog (shared) : %s\n' "{{ vars.SYSLOG_PRIMARY }}"
-                  } | tee /artifacts/new/globex-standards.txt
+                - sh /attachments/report.sh
+              env:
+                REPORT_NAME: globex-standards
+                TENANT_NAME: "{{ vars.TENANT_NAME }}"
+                NTP_PRIMARY: "{{ vars.NTP_PRIMARY }}"
+                DNS_PRIMARY: "{{ vars.DNS_PRIMARY }}"
+                SYSLOG_PRIMARY: "{{ vars.SYSLOG_PRIMARY }}"
             policy:
               timeout_sec: 150
               retries: 0
@@ -63,3 +64,8 @@ flows:
       interface_graph:
         nodes: []
         edges: []
+
+flow_attachments:
+  - flow: "Globex: Plant standards check"
+    filename: report.sh
+    content_file: src/files/standards/report.sh

@@ -2,11 +2,11 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Acme's own flow, alongside the shared "Compliance baseline report" it can
-# also run. This one renders Acme's effective standards and makes the override
-# visible: NTP_PRIMARY resolves to Acme's store-local appliance (10.20.0.123),
-# while DNS/syslog still come from the shared golden standards through the
-# read-through. Device-less, so it runs cleanly.
+# Acme's own standards check — a tenant-authored flow alongside the shared
+# golden flows it can also run. It mounts the same report script the shared
+# flow uses (no inline command) and passes Acme's own values: NTP_PRIMARY
+# resolves to Acme's store-local override while DNS/syslog fall through to the
+# shared golden standards. Device-less, so it runs with no form input.
 
 schema_version: 2
 
@@ -14,8 +14,8 @@ flows:
   - name: "Acme: Store standards check"
     description: >-
       Render Acme's effective network standards. Confirms the store-local NTP
-      override wins over the shared standard while the other standards fall
-      through to Meridian's shared baseline.
+      override wins over the shared standard while the others fall through to
+      Meridian's shared baseline.
     definition:
       graph:
         nodes:
@@ -32,20 +32,20 @@ flows:
             handler: container.run
             position_x: 320
             position_y: 120
+            mounted_files:
+              - report.sh
             params:
               image: alpine:3.20
               working_dir: /workspace
               timeout_seconds: 120
               command:
-                - |
-                  set -e
-                  mkdir -p /artifacts/new
-                  {
-                    printf 'Tenant: %s\n' "{{ vars.TENANT_NAME }}"
-                    printf 'Effective NTP (overridden) : %s\n' "{{ vars.NTP_PRIMARY }}"
-                    printf 'Effective DNS (shared)     : %s\n' "{{ vars.DNS_PRIMARY }}"
-                    printf 'Effective syslog (shared)  : %s\n' "{{ vars.SYSLOG_PRIMARY }}"
-                  } | tee /artifacts/new/acme-standards.txt
+                - sh /attachments/report.sh
+              env:
+                REPORT_NAME: acme-standards
+                TENANT_NAME: "{{ vars.TENANT_NAME }}"
+                NTP_PRIMARY: "{{ vars.NTP_PRIMARY }}"
+                DNS_PRIMARY: "{{ vars.DNS_PRIMARY }}"
+                SYSLOG_PRIMARY: "{{ vars.SYSLOG_PRIMARY }}"
             policy:
               timeout_sec: 150
               retries: 0
@@ -67,3 +67,8 @@ flows:
       interface_graph:
         nodes: []
         edges: []
+
+flow_attachments:
+  - flow: "Acme: Store standards check"
+    filename: report.sh
+    content_file: src/files/standards/report.sh
