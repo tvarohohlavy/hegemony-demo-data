@@ -126,7 +126,7 @@ src/bundles-acme/     # client tenant: Acme Retail
 src/bundles-globex/   # client tenant: Globex Manufacturing
 src/files/            # attachment payloads inlined at build time (content_file)
 demo-inventory/       # git-provider inventory tree (sites/ + devices/)
-dist/*.single.yaml    # one generated bundle per org; imported in filename order
+dist/*.single.yaml    # platform org-directory bundle + one resource bundle per org; imported in filename order
 scripts/build.py
 scripts/validate.py
 ```

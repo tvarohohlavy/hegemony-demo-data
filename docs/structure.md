@@ -62,7 +62,7 @@ scripts/validate.py
 
 - `manifest.yaml` lists generated bundles and their source/output paths.
 - `src/bundles*/` directories each merge into one dist bundle; the instance
-  bootstrap imports every `dist/*.yaml` in filename order (the numeric
+  bootstrap imports every `dist/*.single.yaml` in filename order (the numeric
   prefixes sequence the import).
 - `src/bundles/*.yaml` contains human-edited Configuration Exchange fragments.
 - `src/files/**` holds larger flow-attachment payloads (Dockerfile, containerlab
@@ -71,7 +71,7 @@ scripts/validate.py
 - `demo-inventory/{sites,devices}/**` is the Git inventory source of truth read
   by the `lab-inventory` git provider (`schema_version: 1` records; site paths
   derived from directory layout, `external_id` equal to the file stem).
-- `dist/*.yaml` contains generated single-YAML bundles committed for direct use.
+- `dist/*.single.yaml` contains generated single-YAML bundles committed for direct use.
 - `scripts/build.py` merges fragments deterministically, inlines `content_file`
   attachments, and verifies generated bundles are in sync.
 - `scripts/validate.py` checks cross-fragment references, secret-ref patterns,
@@ -85,7 +85,7 @@ scripts/validate.py
   (the demo fragments are numbered `00`–`55` to control that order).
 - Top-level list sections are concatenated.
 - Top-level mapping sections are shallow-merged by key.
-- `organization` (scalar) may be set by at most one value across fragments
+- `organization` (scalar) must be one consistent non-empty value across fragments
   (repeating the same slug is fine); it binds the whole import to that org.
   `organizations` entries (the platform org directory) concatenate like any
   list section. The validator rejects `orgs/<other>/...` secret folders that

@@ -186,9 +186,18 @@ class Validator:
         ):
             self.error("organization must be a non-empty slug")
             return
-        for entry in self.bundle.get("organizations") or []:
-            if not isinstance(entry, dict) or not entry.get("slug") or not entry.get("name"):
-                self.error("organizations entries require slug and name")
+        organizations = self.bundle.get("organizations")
+        if organizations is not None:
+            if not isinstance(organizations, list):
+                self.error("organizations must be a list")
+            else:
+                for entry in organizations:
+                    slug = entry.get("slug") if isinstance(entry, dict) else None
+                    name = entry.get("name") if isinstance(entry, dict) else None
+                    if not isinstance(slug, str) or not slug or not isinstance(name, str) or not name:
+                        self.error(
+                            "organizations entries require a non-empty string slug and name"
+                        )
         if not isinstance(organization, str):
             return
         expected_prefix = f"orgs/{organization}/"

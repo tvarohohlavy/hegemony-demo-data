@@ -54,7 +54,7 @@ Pushing a `v*` tag runs the release workflow. It verifies generated bundles,
 stamps the tag into `install.sh` (`INSTALLER_VERSION=<tag>`), creates
 `SHA256SUMS`, and publishes a GitHub Release with:
 
-- `dist/*.single.yaml` (one bundle per organization)
+- `dist/*.single.yaml` (a platform org-directory bundle plus one resource bundle per org)
 - `install.sh`
 - `SHA256SUMS`
 

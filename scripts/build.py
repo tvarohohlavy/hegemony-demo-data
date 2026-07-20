@@ -136,6 +136,11 @@ def merge_fragments(config: BundleConfig) -> dict[str, Any]:
                     )
                 organization = value
                 continue
+            if key == "organizations":
+                if not isinstance(value, list):
+                    raise ValueError(f"{path}: organizations must be a list")
+                sections.setdefault(key, []).extend(value)
+                continue
             if isinstance(value, list):
                 sections.setdefault(key, []).extend(value)
             elif isinstance(value, dict):
