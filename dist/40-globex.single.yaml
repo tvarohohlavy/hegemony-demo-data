@@ -100,7 +100,36 @@ flows:
         source: render:success
         target: done
     interface_graph:
-      nodes: []
+      nodes:
+      - id: sec_targets
+        kind: section
+        position_x: 80
+        position_y: 80
+        width: 480
+        height: 180
+        data:
+          label: Plant devices
+          runtime_layout: card
+          collapsible: false
+      - id: f_targets
+        kind: field
+        parent_id: sec_targets
+        position_x: 40
+        position_y: 60
+        data:
+          label: Plant devices
+          field_id: targets
+          field_type: inventory.device
+          required: false
+          description: Globex's plant-floor devices, preselected by default.
+          default_value:
+          - globex-plant1-core-01
+          - globex-plant1-iot-gw-01
+          config:
+            role: plant_devices
+            multiple: true
+            option_source:
+              kind: inventory.devices
       edges: []
 flow_attachments:
 - flow: 'Globex: Plant standards check'

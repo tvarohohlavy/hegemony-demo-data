@@ -65,7 +65,41 @@ flows:
             source: render:success
             target: done
       interface_graph:
-        nodes: []
+        # Preselected default targets: the field ships Acme's store routers
+        # already selected (by portable device name, resolved to ids on
+        # import), so the run form opens with targets filled in. The field is
+        # optional, so the flow still runs with no input.
+        nodes:
+          - id: sec_targets
+            kind: section
+            position_x: 80
+            position_y: 80
+            width: 480
+            height: 180
+            data:
+              label: Store routers
+              runtime_layout: card
+              collapsible: false
+          - id: f_targets
+            kind: field
+            parent_id: sec_targets
+            position_x: 40
+            position_y: 60
+            data:
+              label: Store routers
+              field_id: targets
+              field_type: inventory.device
+              required: false
+              description: Acme's store routers, preselected by default.
+              default_value:
+                - acme-hq-edge-01
+                - acme-store100-rtr-01
+                - acme-store100-sw-01
+              config:
+                role: store_routers
+                multiple: true
+                option_source:
+                  kind: inventory.devices
         edges: []
 
 flow_attachments:

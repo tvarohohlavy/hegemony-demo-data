@@ -142,10 +142,13 @@ Log out. Log in as **`acme-admin`**.
    not Meridian's own org, not Globex. **Tenant isolation.**
 2. In **Acme Retail**, browse **Sites / Devices** — Acme's own store estate,
    and **Secrets** — only `orgs/acme/…`, never another tenant's.
-3. **Flows → "Acme: Store standards check" → Run.** Read the artifact:
+3. **Flows → "Acme: Store standards check" → Run.** The run form opens with
+   Acme's **store routers already preselected** as targets — the flow ships
+   preselected default targets that resolved to Acme's devices on import
+   (they travel as portable device names in the bundle). Read the artifact:
    - `NTP` resolves to **`10.20.0.123`** — Acme's store-local override,
    - `DNS` / `syslog` fall through to the **shared** golden values.
-   **Per-org variable precedence**, live.
+   **Per-org variable precedence** and **preselected targets**, live.
 4. Now run a **shared** flow from Acme — try **"Shared: Ansible config audit"**
    or **"Shared: Terraform network baseline plan"** (both carry a **Shared**
    badge, and both run with **no inputs**). They run **as Acme**, so the Ansible
@@ -226,6 +229,8 @@ read-through and a differentiation badge · per-org variable override precedence
 group→org-role mappings and mixed manual/IdP membership · one user with
 different roles per org · a cross-org auditor · shared **Ansible** and
 **Terraform** activities executing as the consumer org, driven by mounted file
-attachments and runnable with no inputs · the containerlab, parallel execution,
+attachments and runnable with no inputs · flows with **preselected default
+targets** that survive import as portable device names · the containerlab,
+parallel execution,
 approval gates, notifications, git backups, file repositories, and inventory
 providers.
