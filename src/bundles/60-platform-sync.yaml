@@ -1,0 +1,42 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Platform Sync profile: Hegemony's own backup of the platform configuration.
+#
+# Where "Ops: Backup lab configs to Git" backs up *device* configs and the
+# flow-backups repo versions individual *flow definitions*, this profile
+# exports the whole platform configuration surface — variables, sites and
+# devices, git repositories, inventory providers, notification destinations,
+# schedules, webhooks — to the platform-backups Gitea repository in backup
+# (export-only) mode.
+#
+# The referenced git repository (platform-backups) is declared in
+# bundles-meridian-inventory/10-git-repositories.yaml, imported ahead of this
+# bundle, and carries the write token (meridian-gitea-token). Flows are
+# excluded because they already round-trip through flow-backups via native
+# flow Git-sync. As with the other native-write repos, an export fails until
+# Gitea is up and the token is populated — which is expected on a fresh demo.
+
+schema_version: 2
+
+platform_sync_profiles:
+  - name: "Meridian platform config backup"
+    description: >-
+      Export Meridian's platform configuration (everything except flows, which
+      are versioned to flow-backups) to the platform-backups Gitea repository.
+    mode: backup
+    git_repository: platform-backups
+    branch: main
+    base_path: platform
+    enabled: true
+    schedule_enabled: false
+    # Empty include list = "all supported families"; exclude the flow families
+    # so this backup stays platform-config-only and does not duplicate what
+    # flow-backups already versions. Platform sync profiles never back up
+    # themselves.
+    excluded_families:
+      - flow
+      - flow_notification_subscription
+    destructive_policy: block
+    auto_apply_non_destructive: false

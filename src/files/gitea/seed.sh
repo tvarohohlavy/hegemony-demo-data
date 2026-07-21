@@ -9,8 +9,9 @@
 #                        from inside its own container (HTTP basic auth).
 #   * flow-backups     — Hegemony's native flow Git-sync writes flow definitions
 #                        here (see the flow's Git section in the demo bundle).
-#   * platform-backups — a Platform Sync BACKUP profile exports platform config
-#                        here (created in the UI; see docs/walkthrough.md).
+#   * platform-backups — the "Meridian platform config backup" Platform Sync
+#                        profile (imported from the bundle) exports platform
+#                        config here; run its export from the Platform Sync UI.
 # The two native-write repos need a token: Hegemony authenticates git over HTTP
 # with an access token sent as the Basic-auth password (any username), which
 # this script mints and prints for you to paste into the meridian-gitea-token

@@ -36,6 +36,7 @@ RESOURCE_ORDER = [
     "webhooks",
     "flow_subscriptions",
     "permission_overrides",
+    "platform_sync_profiles",
 ]
 
 RESERVED_KEYS = {"schema_version", "exported_at"}

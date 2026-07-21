@@ -119,9 +119,11 @@ against). They become *reachable* only once the lab is stood up.
    * **flow-backups** — **"Net: Lab routing health check"** is in **Git-sync**
      mode. Open it, make a trivial edit and save: its canonical YAML is committed
      and pushed to `flow-backups`. Inspect it under **Git Repositories**.
-   * **platform-backups** — under **Platform Sync**, create a **backup** profile
-     against the `platform-backups` repository and export it to snapshot the
-     platform configuration to Git.
+   * **platform-backups** — the **"Meridian platform config backup"** Platform
+     Sync profile is already provisioned (it imported from the bundle). Open
+     **Platform Sync**, run its **export**, and the platform configuration
+     (variables, sites, git repos, notifications, schedules, webhooks — flows
+     excluded, those go to flow-backups) is snapshotted to `platform-backups`.
    Until the token is set (and Gitea is up) these pushes fail and retry — which is
    expected on a fresh demo.
 
