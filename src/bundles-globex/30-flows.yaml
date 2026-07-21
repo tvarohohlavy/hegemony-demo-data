@@ -29,10 +29,16 @@ flows:
             handler: container.run
             position_x: 320
             position_y: 120
+            # Scope the run to the devices selected in the Plant devices field so
+            # the selection reaches execution (the resolved devices are recorded
+            # as the run's targets) instead of being a dead form control.
+            target_selectors:
+              - type: role
+                role: plant_devices
             mounted_files:
               - report.sh
             params:
-              image: alpine:3.20
+              image: alpine:3.22
               working_dir: /workspace
               timeout_seconds: 120
               command:

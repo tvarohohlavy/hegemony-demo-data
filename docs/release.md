@@ -6,8 +6,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Release Process
 
-This repo releases content, not Python packages. The release artifact is the
-generated single-YAML bundle under `dist/`.
+This repo releases content, not Python packages. The release artifacts are the
+generated single-YAML bundles under `dist/` (one per organization, imported in
+filename order).
 
 ## Versioning
 

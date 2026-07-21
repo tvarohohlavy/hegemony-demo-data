@@ -181,11 +181,11 @@ class Validator:
         at import time, so catch the mismatch at build time.
         """
         organization = self.bundle.get("organization")
-        if organization is not None and (
-            not isinstance(organization, str) or not organization
-        ):
-            self.error("organization must be a non-empty slug")
-            return
+        if organization is not None:
+            if not isinstance(organization, str) or not organization.strip():
+                self.error("organization must be a non-empty slug")
+                return
+            organization = organization.strip()
         organizations = self.bundle.get("organizations")
         if organizations is not None:
             if not isinstance(organizations, list):
@@ -509,16 +509,25 @@ def _shared_reference_universe(
     secret_paths); the shared bundle is the resource bundle bound to the org
     the directory marks ``is_shared: true``.
     """
-    shared_slug: str | None = None
+    # A shared org may publish resources only when exactly one directory entry
+    # is flagged shared AND active AND carries a non-empty string slug. Zero or
+    # an ambiguous multiple yields no shared universe (fail closed).
+    shared_slugs: set[str] = set()
     for bundle in merged_bundles.values():
         for entry in bundle.get("organizations", []) or []:
-            if isinstance(entry, dict) and entry.get("is_shared") and entry.get("slug"):
-                shared_slug = entry["slug"]
-                break
-        if shared_slug is not None:
-            break
-    if shared_slug is None:
+            if not isinstance(entry, dict):
+                continue
+            slug = entry.get("slug")
+            if (
+                entry.get("is_shared")
+                and entry.get("is_active")
+                and isinstance(slug, str)
+                and slug.strip()
+            ):
+                shared_slugs.add(slug.strip())
+    if len(shared_slugs) != 1:
         return None, set(), set()
+    shared_slug = next(iter(shared_slugs))
 
     for bundle in merged_bundles.values():
         if bundle.get("organization") == shared_slug:

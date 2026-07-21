@@ -129,8 +129,9 @@ def merge_fragments(config: BundleConfig) -> dict[str, Any]:
             if key in {"schema_version", "exported_at"}:
                 continue
             if key == "organization":
-                if not isinstance(value, str) or not value:
+                if not isinstance(value, str) or not value.strip():
                     raise ValueError(f"{path}: organization must be a non-empty slug")
+                value = value.strip()
                 if organization is not None and organization != value:
                     raise ValueError(
                         f"{path}: conflicting organization {value!r} (already {organization!r})"

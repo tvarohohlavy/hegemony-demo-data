@@ -1719,7 +1719,7 @@ flow_attachments:
     #\n# Lightweight Linux endpoint for the Meridian lab: an Alpine host with sshd so\n# Hegemony's shell.execute handler\
     \ can log in like to any server, plus\n# iproute2/iputils for end-to-end reachability tests across the routed fabric.\n\
     # ping gets cap_net_raw so the non-root login can run it.\n#\n# Built locally by \"Lab: Provision and tear down demo datacenter\"\
-    \ and\n# referenced from topology.clab.yml as image \"meridian/lab-host:latest\".\nFROM alpine:3.20\n\n# The login password\
+    \ and\n# referenced from topology.clab.yml as image \"meridian/lab-host:latest\".\nFROM alpine:3.22\n\n# The login password\
     \ is injected at build time from the meridian-lab-ssh vault\n# secret (same credential the git inventory provider hands\
     \ to the routers).\nARG LAB_PASSWORD=demo-lab-password\n\nRUN apk add --no-cache openssh iproute2 iputils libcap-utils\
     \ \\\n    && ssh-keygen -A \\\n    && sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config\
@@ -1987,35 +1987,32 @@ flow_attachments:
     \            here (see the flow's Git section in the demo bundle).\n#   * platform-backups — the \"Meridian platform config\
     \ backup\" Platform Sync\n#                        profile (imported from the bundle) exports platform\n#            \
     \            config here; run its export from the Platform Sync UI.\n# The two native-write repos need a token: Hegemony\
-    \ authenticates git over HTTP\n# with an access token sent as the Basic-auth password (any username), which\n# this script\
-    \ mints and prints for you to paste into the meridian-gitea-token\n# secret. Idempotent — safe to re-run.\nset -e\n\n\
-    GITEA_CONTAINER=\"${GITEA_CONTAINER:-meridian-gitea}\"\nBASE=\"${GITEA_URL:-http://host.docker.internal:3000}\"\nADMIN_USER=\"\
-    ${ADMIN_USER:-meridian-admin}\"\nADMIN_PASSWORD=\"${ADMIN_PASSWORD:-demo-gitea-admin-password}\"\nORG=\"${GITEA_ORG:-meridian}\"\
-    \n\necho \"Waiting for Gitea at ${BASE} ...\"\nHEALTHY=false\nfor _ in $(seq 1 60); do\n  if curl -fsS \"${BASE}/api/healthz\"\
-    \ >/dev/null 2>&1; then\n    echo \"Gitea is healthy.\"\n    HEALTHY=true\n    break\n  fi\n  sleep 2\ndone\nif [ \"${HEALTHY}\"\
-    \ != \"true\" ]; then\n  echo \"ERROR: Gitea did not become healthy within 120s\" >&2\n  exit 1\nfi\n\necho \"Creating\
-    \ admin user ${ADMIN_USER} (idempotent) ...\"\ndocker exec \"${GITEA_CONTAINER}\" gitea admin user create \\\n  --username\
-    \ \"${ADMIN_USER}\" \\\n  --password \"${ADMIN_PASSWORD}\" \\\n  --email \"${ADMIN_USER}@meridian.example\" \\\n  --admin\
-    \ --must-change-password=false \\\n  || echo \"admin user already exists; continuing\"\n\necho \"Creating public org ${ORG}\
-    \ (idempotent) ...\"\ncurl -fsS -u \"${ADMIN_USER}:${ADMIN_PASSWORD}\" -X POST \"${BASE}/api/v1/orgs\" \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d \"{\\\"username\\\":\\\"${ORG}\\\",\\\"visibility\\\":\\\"public\\\"}\" \\\n  || echo \"\
-    org already exists; continuing\"\n\nfor REPO in config-backups flow-backups platform-backups; do\n  echo \"Creating ${REPO}\
-    \ repository (idempotent) ...\"\n  curl -fsS -u \"${ADMIN_USER}:${ADMIN_PASSWORD}\" -X POST \"${BASE}/api/v1/orgs/${ORG}/repos\"\
-    \ \\\n    -H 'Content-Type: application/json' \\\n    -d \"{\\\"name\\\":\\\"${REPO}\\\",\\\"private\\\":false,\\\"auto_init\\\
-    \":true,\\\"default_branch\\\":\\\"main\\\"}\" \\\n    || echo \"repository ${REPO} already exists; continuing\"\ndone\n\
-    \n# Mint a write-scoped access token for Hegemony's native git integrations\n# (flow Git-sync and Platform Sync). Gitea\
-    \ validates a token supplied as the\n# Basic-auth password regardless of the username, which is exactly how\n# Hegemony's\
-    \ auth_secret_ref sends it (Authorization: Basic base64(x-access-token:TOKEN)).\n# Token names are unique per user, so\
-    \ a re-run reports the existing one instead\n# of failing the whole seed.\necho \"Minting the 'hegemony-backups' access\
-    \ token (idempotent) ...\"\nTOKEN_JSON=$(curl -fsS -u \"${ADMIN_USER}:${ADMIN_PASSWORD}\" -X POST \\\n  \"${BASE}/api/v1/users/${ADMIN_USER}/tokens\"\
-    \ \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\":\"hegemony-backups\",\"scopes\":[\"write:repository\"\
-    ]}' 2>/dev/null || true)\nTOKEN=$(printf '%s' \"${TOKEN_JSON}\" | sed -n 's/.*\"sha1\":\"\\([^\"]*\\)\".*/\\1/p')\nif\
-    \ [ -n \"${TOKEN}\" ]; then\n  echo \"  ------------------------------------------------------------------\"\n  echo \"\
-    \  Store this token in the Hegemony secret 'meridian-gitea-token'\"\n  echo \"  (folder orgs/default/secrets/meridian/gitea/token,\
-    \ key 'token') so\"\n  echo \"  the flow-backups and platform-backups repositories can be written to:\"\n  echo \"   \
-    \ ${TOKEN}\"\n  echo \"  ------------------------------------------------------------------\"\nelse\n  echo \"  Token\
-    \ 'hegemony-backups' already exists; reuse the value already stored\"\n  echo \"  in the meridian-gitea-token secret,\
-    \ or delete the token in Gitea and\"\n  echo \"  re-run this flow to mint a fresh one.\"\nfi\n\necho \"Gitea seeded: ${BASE}/${ORG}/{config-backups,flow-backups,platform-backups}\"\
+    \ authenticates git over HTTP\n# with an access token sent as the Basic-auth password (any username). This\n# script does\
+    \ NOT mint or print that token — a write credential must not land in\n# run/container logs — so, once Gitea is up, create\
+    \ one yourself and store it in\n# the meridian-gitea-token secret (see the final instructions below).\n# Idempotent —\
+    \ safe to re-run.\nset -e\n\nGITEA_CONTAINER=\"${GITEA_CONTAINER:-meridian-gitea}\"\nBASE=\"${GITEA_URL:-http://host.docker.internal:3000}\"\
+    \nADMIN_USER=\"${ADMIN_USER:-meridian-admin}\"\nADMIN_PASSWORD=\"${ADMIN_PASSWORD:-demo-gitea-admin-password}\"\nORG=\"\
+    ${GITEA_ORG:-meridian}\"\n\n# POST to a Gitea API endpoint, treating a genuine duplicate (409/422) as an\n# idempotent\
+    \ success but surfacing auth/network/server failures instead of\n# masking them all as \"already exists\".\ngitea_create()\
+    \ {\n  desc=\"$1\"\n  url=\"$2\"\n  data=\"$3\"\n  echo \"Creating ${desc} (idempotent) ...\"\n  status=$(curl -sS -u\
+    \ \"${ADMIN_USER}:${ADMIN_PASSWORD}\" -X POST \"${url}\" \\\n    -H 'Content-Type: application/json' -d \"${data}\" \\\
+    \n    -o /dev/null -w '%{http_code}') || {\n    echo \"ERROR: request to create ${desc} failed (network/connection)\"\
+    \ >&2\n    return 1\n  }\n  case \"${status}\" in\n    200 | 201) echo \"  ${desc}: created.\" ;;\n    409 | 422) echo\
+    \ \"  ${desc}: already exists; continuing.\" ;;\n    *)\n      echo \"ERROR: creating ${desc} returned HTTP ${status}\"\
+    \ >&2\n      return 1\n      ;;\n  esac\n}\n\necho \"Waiting for Gitea at ${BASE} ...\"\nHEALTHY=false\nfor _ in $(seq\
+    \ 1 60); do\n  if curl -fsS \"${BASE}/api/healthz\" >/dev/null 2>&1; then\n    echo \"Gitea is healthy.\"\n    HEALTHY=true\n\
+    \    break\n  fi\n  sleep 2\ndone\nif [ \"${HEALTHY}\" != \"true\" ]; then\n  echo \"ERROR: Gitea did not become healthy\
+    \ within 120s\" >&2\n  exit 1\nfi\n\necho \"Creating admin user ${ADMIN_USER} (idempotent) ...\"\ndocker exec \"${GITEA_CONTAINER}\"\
+    \ gitea admin user create \\\n  --username \"${ADMIN_USER}\" \\\n  --password \"${ADMIN_PASSWORD}\" \\\n  --email \"${ADMIN_USER}@meridian.example\"\
+    \ \\\n  --admin --must-change-password=false \\\n  || echo \"admin user already exists; continuing\"\n\ngitea_create \"\
+    org ${ORG}\" \"${BASE}/api/v1/orgs\" \\\n  \"{\\\"username\\\":\\\"${ORG}\\\",\\\"visibility\\\":\\\"public\\\"}\"\n\n\
+    for REPO in config-backups flow-backups platform-backups; do\n  gitea_create \"${REPO} repository\" \"${BASE}/api/v1/orgs/${ORG}/repos\"\
+    \ \\\n    \"{\\\"name\\\":\\\"${REPO}\\\",\\\"private\\\":false,\\\"auto_init\\\":true,\\\"default_branch\\\":\\\"main\\\
+    \"}\"\ndone\n\necho \"Gitea seeded: ${BASE}/${ORG}/{config-backups,flow-backups,platform-backups}\"\necho \"  ------------------------------------------------------------------\"\
+    \necho \"  To let Hegemony write to flow-backups and platform-backups, sign in to\"\necho \"  Gitea as ${ADMIN_USER},\
+    \ generate an access token\"\necho \"  (Settings -> Applications, scope write:repository), and store it in the\"\necho\
+    \ \"  Hegemony secret 'meridian-gitea-token' (folder\"\necho \"  orgs/default/secrets/meridian/gitea/token, key 'token').\
+    \ The token is\"\necho \"  shown by Gitea only once and never printed here, so it stays out of logs.\"\necho \"  ------------------------------------------------------------------\"\
     \n"
 variables:
 - name: ORG_NAME

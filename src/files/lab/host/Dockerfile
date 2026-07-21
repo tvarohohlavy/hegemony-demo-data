@@ -8,7 +8,7 @@
 #
 # Built locally by "Lab: Provision and tear down demo datacenter" and
 # referenced from topology.clab.yml as image "meridian/lab-host:latest".
-FROM alpine:3.20
+FROM alpine:3.22
 
 # The login password is injected at build time from the meridian-lab-ssh vault
 # secret (same credential the git inventory provider hands to the routers).

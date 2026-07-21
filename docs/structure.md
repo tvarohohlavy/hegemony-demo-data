@@ -17,7 +17,7 @@ network automation both for itself and for client tenants:
 | Org | Slug | Who | Bundle |
 | --- | --- | --- | --- |
 | Meridian Networks | `default` | The MSP's own network (the original containerlab demo) | `src/bundles` → `dist/10-meridian…` |
-| Shared Standards | `shared` | The **enabled shared org** — golden baseline plus golden compliance / Ansible / Terraform flows every org reads read-only and runs | `src/bundles-shared` → `dist/20-…` |
+| Shared Standards | `shared` | The **enabled shared org** — golden baseline plus golden compliance / Ansible / Terraform flows that every org can read and run | `src/bundles-shared` → `dist/20-…` |
 | Acme Retail | `acme` | Isolated client tenant; overrides the shared NTP standard | `src/bundles-acme` → `dist/30-…` |
 | Globex Manufacturing | `globex` | Isolated client tenant; inherits the shared standards unchanged | `src/bundles-globex` → `dist/40-…` |
 
@@ -85,11 +85,14 @@ scripts/validate.py
   (the demo fragments are numbered `00`–`55` to control that order).
 - Top-level list sections are concatenated.
 - Top-level mapping sections are shallow-merged by key.
-- `organization` (scalar) must be one consistent non-empty value across fragments
-  (repeating the same slug is fine); it binds the whole import to that org.
-  `organizations` entries (the platform org directory) concatenate like any
-  list section. The validator rejects `orgs/<other>/...` secret folders that
-  fall outside the declared organization's namespace.
+- `organization` (scalar) is optional: a bundle may omit it (an unbound bundle
+  imports into the caller's active org). When present it must be one consistent
+  non-empty value across fragments (repeating the same slug is fine) and binds
+  the whole import to that org. The `organizations` list (the platform org
+  directory) is a separate section — it declares orgs with their members and IdP
+  mappings, concatenates like any list section, and does **not** create an
+  `organization` binding on its own. The validator rejects `orgs/<other>/...`
+  secret folders that fall outside a declared organization's namespace.
 - Unsupported top-level keys fail the build so typos do not silently ship.
 - A `flow_attachments` entry may set `content_file: <repo-relative path>` in
   place of `content:`; the build reads that file (from `src/files/`) and inlines

@@ -33,7 +33,7 @@ flows:
         mounted_files:
         - report.sh
         params:
-          image: alpine:3.20
+          image: alpine:3.22
           working_dir: /workspace
           timeout_seconds: 120
           command:
@@ -91,7 +91,7 @@ flows:
         - audit.yml
         - run.sh
         params:
-          image: alpine:3.20
+          image: alpine:3.22
           working_dir: /workspace
           timeout_seconds: 240
           command:
@@ -201,13 +201,17 @@ flow_attachments:
     \ \"{{ lookup('env', 'TENANT_NAME') | default('unknown', true) }}\"\n    ntp: \"{{ lookup('env', 'NTP_PRIMARY') }}\"\n\
     \    dns: \"{{ lookup('env', 'DNS_PRIMARY') }}\"\n    syslog: \"{{ lookup('env', 'SYSLOG_PRIMARY') }}\"\n  tasks:\n  \
     \  - name: Ensure the artifact directory exists\n      ansible.builtin.file:\n        path: /artifacts/new\n        state:\
-    \ directory\n        mode: \"0755\"\n\n    - name: Assert the golden standards are all defined\n      ansible.builtin.assert:\n\
-    \        that:\n          - ntp | length > 0\n          - dns | length > 0\n          - syslog | length > 0\n        success_msg:\
-    \ \"All golden standards are present for {{ tenant }}.\"\n        fail_msg: \"One or more golden standards is unset for\
-    \ {{ tenant }}.\"\n\n    - name: Render the audit report\n      ansible.builtin.copy:\n        dest: /artifacts/new/ansible-audit.txt\n\
-    \        mode: \"0644\"\n        content: |\n          Ansible golden config audit — {{ tenant }}\n          NTP primary\
-    \    : {{ ntp }}\n          DNS primary    : {{ dns }}\n          Syslog primary : {{ syslog }}\n          Result    \
-    \     : PASS (all standards present)\n"
+    \ directory\n        mode: \"0755\"\n\n    - name: Evaluate the golden standards\n      ansible.builtin.set_fact:\n  \
+    \      standards_ok: \"{{ (ntp | length > 0) and (dns | length > 0) and (syslog | length > 0) }}\"\n\n    # Always write\
+    \ the report first — including the FAIL path — so the run has an\n    # audit artifact recording the tenant, standards\
+    \ and result even when a\n    # standard is unset and the assertion below aborts the play.\n    - name: Render the audit\
+    \ report\n      ansible.builtin.copy:\n        dest: /artifacts/new/ansible-audit.txt\n        mode: \"0644\"\n      \
+    \  content: |\n          Ansible golden config audit — {{ tenant }}\n          NTP primary    : {{ ntp | default('<unset>',\
+    \ true) }}\n          DNS primary    : {{ dns | default('<unset>', true) }}\n          Syslog primary : {{ syslog | default('<unset>',\
+    \ true) }}\n          Result         : {{ 'PASS (all standards present)' if standards_ok | bool else 'FAIL (one or more\
+    \ standards unset)' }}\n\n    - name: Assert the golden standards are all defined\n      ansible.builtin.assert:\n   \
+    \     that:\n          - standards_ok | bool\n        success_msg: \"All golden standards are present for {{ tenant }}.\"\
+    \n        fail_msg: \"One or more golden standards is unset for {{ tenant }}.\"\n"
 - flow: 'Shared: Ansible config audit'
   filename: run.sh
   content: '#!/bin/sh
@@ -292,7 +296,7 @@ variables:
   value: 192.0.2.54
   description: Golden primary syslog collector. Shared standard read by every org.
 - name: APPROVED_CONTAINER_IMAGES
-  value: alpine:3.20, alpine/git:v2.45.2, ghcr.io/srl-labs/clab:0.77.0
+  value: alpine:3.22, alpine/git:v2.45.2, hashicorp/terraform:1.9, ghcr.io/srl-labs/clab:0.77.0
   description: Container images Meridian has vetted for flow steps; surfaced to every org.
 - name: STANDARDS_OWNER
   value: Meridian Shared Standards

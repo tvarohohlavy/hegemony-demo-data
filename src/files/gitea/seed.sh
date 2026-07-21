@@ -13,9 +13,11 @@
 #                        profile (imported from the bundle) exports platform
 #                        config here; run its export from the Platform Sync UI.
 # The two native-write repos need a token: Hegemony authenticates git over HTTP
-# with an access token sent as the Basic-auth password (any username), which
-# this script mints and prints for you to paste into the meridian-gitea-token
-# secret. Idempotent — safe to re-run.
+# with an access token sent as the Basic-auth password (any username). This
+# script does NOT mint or print that token — a write credential must not land in
+# run/container logs — so, once Gitea is up, create one yourself and store it in
+# the meridian-gitea-token secret (see the final instructions below).
+# Idempotent — safe to re-run.
 set -e
 
 GITEA_CONTAINER="${GITEA_CONTAINER:-meridian-gitea}"
@@ -23,6 +25,30 @@ BASE="${GITEA_URL:-http://host.docker.internal:3000}"
 ADMIN_USER="${ADMIN_USER:-meridian-admin}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-demo-gitea-admin-password}"
 ORG="${GITEA_ORG:-meridian}"
+
+# POST to a Gitea API endpoint, treating a genuine duplicate (409/422) as an
+# idempotent success but surfacing auth/network/server failures instead of
+# masking them all as "already exists".
+gitea_create() {
+  desc="$1"
+  url="$2"
+  data="$3"
+  echo "Creating ${desc} (idempotent) ..."
+  status=$(curl -sS -u "${ADMIN_USER}:${ADMIN_PASSWORD}" -X POST "${url}" \
+    -H 'Content-Type: application/json' -d "${data}" \
+    -o /dev/null -w '%{http_code}') || {
+    echo "ERROR: request to create ${desc} failed (network/connection)" >&2
+    return 1
+  }
+  case "${status}" in
+    200 | 201) echo "  ${desc}: created." ;;
+    409 | 422) echo "  ${desc}: already exists; continuing." ;;
+    *)
+      echo "ERROR: creating ${desc} returned HTTP ${status}" >&2
+      return 1
+      ;;
+  esac
+}
 
 echo "Waiting for Gitea at ${BASE} ..."
 HEALTHY=false
@@ -47,43 +73,20 @@ docker exec "${GITEA_CONTAINER}" gitea admin user create \
   --admin --must-change-password=false \
   || echo "admin user already exists; continuing"
 
-echo "Creating public org ${ORG} (idempotent) ..."
-curl -fsS -u "${ADMIN_USER}:${ADMIN_PASSWORD}" -X POST "${BASE}/api/v1/orgs" \
-  -H 'Content-Type: application/json' \
-  -d "{\"username\":\"${ORG}\",\"visibility\":\"public\"}" \
-  || echo "org already exists; continuing"
+gitea_create "org ${ORG}" "${BASE}/api/v1/orgs" \
+  "{\"username\":\"${ORG}\",\"visibility\":\"public\"}"
 
 for REPO in config-backups flow-backups platform-backups; do
-  echo "Creating ${REPO} repository (idempotent) ..."
-  curl -fsS -u "${ADMIN_USER}:${ADMIN_PASSWORD}" -X POST "${BASE}/api/v1/orgs/${ORG}/repos" \
-    -H 'Content-Type: application/json' \
-    -d "{\"name\":\"${REPO}\",\"private\":false,\"auto_init\":true,\"default_branch\":\"main\"}" \
-    || echo "repository ${REPO} already exists; continuing"
+  gitea_create "${REPO} repository" "${BASE}/api/v1/orgs/${ORG}/repos" \
+    "{\"name\":\"${REPO}\",\"private\":false,\"auto_init\":true,\"default_branch\":\"main\"}"
 done
 
-# Mint a write-scoped access token for Hegemony's native git integrations
-# (flow Git-sync and Platform Sync). Gitea validates a token supplied as the
-# Basic-auth password regardless of the username, which is exactly how
-# Hegemony's auth_secret_ref sends it (Authorization: Basic base64(x-access-token:TOKEN)).
-# Token names are unique per user, so a re-run reports the existing one instead
-# of failing the whole seed.
-echo "Minting the 'hegemony-backups' access token (idempotent) ..."
-TOKEN_JSON=$(curl -fsS -u "${ADMIN_USER}:${ADMIN_PASSWORD}" -X POST \
-  "${BASE}/api/v1/users/${ADMIN_USER}/tokens" \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"hegemony-backups","scopes":["write:repository"]}' 2>/dev/null || true)
-TOKEN=$(printf '%s' "${TOKEN_JSON}" | sed -n 's/.*"sha1":"\([^"]*\)".*/\1/p')
-if [ -n "${TOKEN}" ]; then
-  echo "  ------------------------------------------------------------------"
-  echo "  Store this token in the Hegemony secret 'meridian-gitea-token'"
-  echo "  (folder orgs/default/secrets/meridian/gitea/token, key 'token') so"
-  echo "  the flow-backups and platform-backups repositories can be written to:"
-  echo "    ${TOKEN}"
-  echo "  ------------------------------------------------------------------"
-else
-  echo "  Token 'hegemony-backups' already exists; reuse the value already stored"
-  echo "  in the meridian-gitea-token secret, or delete the token in Gitea and"
-  echo "  re-run this flow to mint a fresh one."
-fi
-
 echo "Gitea seeded: ${BASE}/${ORG}/{config-backups,flow-backups,platform-backups}"
+echo "  ------------------------------------------------------------------"
+echo "  To let Hegemony write to flow-backups and platform-backups, sign in to"
+echo "  Gitea as ${ADMIN_USER}, generate an access token"
+echo "  (Settings -> Applications, scope write:repository), and store it in the"
+echo "  Hegemony secret 'meridian-gitea-token' (folder"
+echo "  orgs/default/secrets/meridian/gitea/token, key 'token'). The token is"
+echo "  shown by Gitea only once and never printed here, so it stays out of logs."
+echo "  ------------------------------------------------------------------"

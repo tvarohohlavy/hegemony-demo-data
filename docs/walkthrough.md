@@ -113,9 +113,10 @@ against). They become *reachable* only once the lab is stood up.
    (see Act 4 for the contrast). And **"Net: End-to-end reachability test"** opens
    with the four **endpoint hosts preselected** as probe sources.
 6. **Native Git backups.** That flow pushes from *inside its container*; two more
-   Gitea repositories are wired for Hegemony to write to *itself*. When the Lab
-   flow stood Gitea up its seed printed a write token — paste it into the
-   **`meridian-gitea-token`** secret (Settings → Secrets), then:
+   Gitea repositories are wired for Hegemony to write to *itself*. Once the Lab
+   flow has stood Gitea up, create a Gitea access token (log in as
+   `meridian-admin`, **Settings → Applications**, scope `write:repository`) and
+   store it in the **`meridian-gitea-token`** secret (Settings → Secrets), then:
    * **flow-backups** — **"Net: Lab routing health check"** is in **Git-sync**
      mode. Open it, make a trivial edit and save: its canonical YAML is committed
      and pushed to `flow-backups`. Inspect it under **Git Repositories**.
