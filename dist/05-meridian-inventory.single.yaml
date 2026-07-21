@@ -14,6 +14,18 @@ git_repositories:
   branch: main
   sync_stale_seconds: 60
   allow_insecure_url: true
+- name: flow-backups
+  url: http://host.docker.internal:3000/meridian/flow-backups.git
+  branch: main
+  sync_stale_seconds: 60
+  allow_insecure_url: true
+  auth_secret_ref: '{{ secret(''vault://orgs/default/secrets/meridian/gitea/token/token'') }}'
+- name: platform-backups
+  url: http://host.docker.internal:3000/meridian/platform-backups.git
+  branch: main
+  sync_stale_seconds: 60
+  allow_insecure_url: true
+  auth_secret_ref: '{{ secret(''vault://orgs/default/secrets/meridian/gitea/token/token'') }}'
 inventory_providers:
 - name: lab-inventory
   provider_type: git

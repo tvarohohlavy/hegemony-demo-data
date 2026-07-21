@@ -112,11 +112,24 @@ against). They become *reachable* only once the lab is stood up.
    standards — note it prints `ntp=192.0.2.123`, resolved from the **shared** org
    (see Act 4 for the contrast). And **"Net: End-to-end reachability test"** opens
    with the four **endpoint hosts preselected** as probe sources.
+6. **Native Git backups.** That flow pushes from *inside its container*; two more
+   Gitea repositories are wired for Hegemony to write to *itself*. When the Lab
+   flow stood Gitea up its seed printed a write token — paste it into the
+   **`meridian-gitea-token`** secret (Settings → Secrets), then:
+   * **flow-backups** — **"Net: Lab routing health check"** is in **Git-sync**
+     mode. Open it, make a trivial edit and save: its canonical YAML is committed
+     and pushed to `flow-backups`. Inspect it under **Git Repositories**.
+   * **platform-backups** — under **Platform Sync**, create a **backup** profile
+     against the `platform-backups` repository and export it to snapshot the
+     platform configuration to Git.
+   Until the token is set (and Gitea is up) these pushes fail and retry — which is
+   expected on a fresh demo.
 
 > **Feature:** a git inventory provider synced at bootstrap so its devices are
 > present from first boot, the MSP's own lab flows with **preselected default
 > targets**, the containerlab, parallel flow execution, approval gates,
-> notifications, git-backed backups, and shared-variable resolution.
+> notifications, backups in three flavours (flow-container push, native flow
+> Git-sync, and Platform Sync export), and shared-variable resolution.
 
 ---
 
