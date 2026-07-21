@@ -13,10 +13,11 @@
 #
 # The referenced git repository (platform-backups) is declared in
 # bundles-meridian-inventory/10-git-repositories.yaml, imported ahead of this
-# bundle, and carries the write token (meridian-gitea-token). Flows are
+# bundle, and authenticates as the Gitea "x-access-token" service account the
+# Lab seed provisions (password = meridian-gitea-token secret). Flows are
 # excluded because they already round-trip through flow-backups via native
-# flow Git-sync. As with the other native-write repos, an export fails until
-# Gitea is up and the token is populated — which is expected on a fresh demo.
+# flow Git-sync. As with the other native-write repos, an export just needs
+# Gitea up (stood up by the Lab flow) and then works out of the box.
 
 schema_version: 2
 

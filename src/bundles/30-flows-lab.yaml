@@ -226,6 +226,10 @@ flows:
                 GITEA_ORG: "{{ vars.GITEA_ORG }}"
                 ADMIN_USER: "{{ secret('vault://orgs/default/secrets/meridian/gitea/admin/username') }}"
                 ADMIN_PASSWORD: "{{ secret('vault://orgs/default/secrets/meridian/gitea/admin/password') }}"
+                # Password for the "x-access-token" Gitea service account the seed
+                # provisions — the exact value Hegemony sends as the git Basic-auth
+                # password, so native flow/platform backups authenticate out of the box.
+                WRITE_PASSWORD: "{{ secret('vault://orgs/default/secrets/meridian/gitea/token/token') }}"
               command:
                 - |
                   DEPLOY=$(printf '%s' "{{ inputs.deploy_gitea }}" | tr 'A-Z' 'a-z')

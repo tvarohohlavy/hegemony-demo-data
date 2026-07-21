@@ -18,9 +18,11 @@
 #     through its native git integrations (not a flow container): flow-backups
 #     receives flow definitions via flow Git-sync, platform-backups receives
 #     platform config via a Platform Sync BACKUP profile. Because Hegemony
-#     pushes, they carry an auth_secret_ref — a write token minted by the Gitea
-#     seed and stored in the meridian-gitea-token secret. Until that token is
-#     pasted in (and Gitea is up) the pushes fail, which is expected.
+#     pushes, they carry an auth_secret_ref pointing at the meridian-gitea-token
+#     secret. Hegemony authenticates as the fixed username "x-access-token" with
+#     that secret as the password; the Gitea seed provisions a matching
+#     "x-access-token" service account and grants it write here, so the pushes
+#     work out of the box once Gitea is up (no access token to mint or paste in).
 #
 # The config-backups entry is read-only in Hegemony (the flow pushes with its
 # own container credentials); it exists so operators can browse the backups.
