@@ -1998,18 +1998,24 @@ flow_attachments:
     ${GITEA_CONTAINER:-meridian-gitea}\"\nBASE=\"${GITEA_URL:-http://host.docker.internal:3000}\"\nADMIN_USER=\"${ADMIN_USER:-meridian-admin}\"\
     \nADMIN_PASSWORD=\"${ADMIN_PASSWORD:-demo-gitea-admin-password}\"\nORG=\"${GITEA_ORG:-meridian}\"\n# The service account\
     \ Hegemony authenticates as. Its name MUST equal the fixed\n# username Hegemony's git client sends (see apps/api/services/git_ops.py).\n\
-    GIT_USER=\"x-access-token\"\nWRITE_PASSWORD=\"${WRITE_PASSWORD:-}\"\n\n# Call a Gitea API endpoint with the admin credentials,\
-    \ treating a genuine\n# duplicate (409/422) as an idempotent success but surfacing auth/network/server\n# failures instead\
-    \ of masking them all as \"already exists\". Never echoes the\n# request body, so secrets passed in ${data} stay out of\
-    \ logs.\n#   gitea_api \"<description>\" <METHOD> <url> [json-body]\ngitea_api() {\n  desc=\"$1\"\n  method=\"$2\"\n \
-    \ url=\"$3\"\n  data=\"$4\"\n  echo \"Provisioning ${desc} (idempotent) ...\"\n  if [ -n \"${data}\" ]; then\n    status=$(curl\
-    \ -sS -u \"${ADMIN_USER}:${ADMIN_PASSWORD}\" -X \"${method}\" \"${url}\" \\\n      -H 'Content-Type: application/json'\
-    \ -d \"${data}\" \\\n      -o /dev/null -w '%{http_code}') || {\n      echo \"ERROR: request for ${desc} failed (network/connection)\"\
-    \ >&2\n      return 1\n    }\n  else\n    status=$(curl -sS -u \"${ADMIN_USER}:${ADMIN_PASSWORD}\" -X \"${method}\" \"\
-    ${url}\" \\\n      -o /dev/null -w '%{http_code}') || {\n      echo \"ERROR: request for ${desc} failed (network/connection)\"\
-    \ >&2\n      return 1\n    }\n  fi\n  case \"${status}\" in\n    200 | 201 | 204) echo \"  ${desc}: ok (HTTP ${status}).\"\
-    \ ;;\n    409 | 422) echo \"  ${desc}: already exists; continuing.\" ;;\n    *)\n      echo \"ERROR: ${desc} returned\
-    \ HTTP ${status}\" >&2\n      return 1\n      ;;\n  esac\n}\n\necho \"Waiting for Gitea at ${BASE} ...\"\nHEALTHY=false\n\
+    GIT_USER=\"x-access-token\"\nWRITE_PASSWORD=\"${WRITE_PASSWORD:-}\"\n\n# Call a Gitea API endpoint with the admin credentials.\
+    \ A genuine duplicate is\n# an idempotent success, but a 422 is ambiguous — Gitea returns it both for\n# \"already exists\"\
+    \ AND for real validation errors (bad password, invalid name),\n# so the body is inspected and only an already-exists\
+    \ 422 is ignored; every\n# other 422 and any auth/network/server failure is surfaced. The request body is\n# never echoed\
+    \ and Gitea does not reflect submitted passwords in responses, so\n# secrets passed in ${data} stay out of logs even when\
+    \ an error body is printed.\n#   gitea_api \"<description>\" <METHOD> <url> [json-body]\ngitea_api() {\n  desc=\"$1\"\n\
+    \  method=\"$2\"\n  url=\"$3\"\n  data=\"$4\"\n  echo \"Provisioning ${desc} (idempotent) ...\"\n  body_file=$(mktemp\
+    \ 2>/dev/null || echo \"/tmp/gitea_api_body.$$\")\n  if [ -n \"${data}\" ]; then\n    status=$(curl -sS -u \"${ADMIN_USER}:${ADMIN_PASSWORD}\"\
+    \ -X \"${method}\" \"${url}\" \\\n      -H 'Content-Type: application/json' -d \"${data}\" \\\n      -o \"${body_file}\"\
+    \ -w '%{http_code}') || {\n      echo \"ERROR: request for ${desc} failed (network/connection)\" >&2\n      rm -f \"${body_file}\"\
+    \n      return 1\n    }\n  else\n    status=$(curl -sS -u \"${ADMIN_USER}:${ADMIN_PASSWORD}\" -X \"${method}\" \"${url}\"\
+    \ \\\n      -o \"${body_file}\" -w '%{http_code}') || {\n      echo \"ERROR: request for ${desc} failed (network/connection)\"\
+    \ >&2\n      rm -f \"${body_file}\"\n      return 1\n    }\n  fi\n  rc=0\n  case \"${status}\" in\n    200 | 201 | 204)\
+    \ echo \"  ${desc}: ok (HTTP ${status}).\" ;;\n    409) echo \"  ${desc}: already exists; continuing.\" ;;\n    422)\n\
+    \      if grep -qiE 'already (exists|taken|used)' \"${body_file}\"; then\n        echo \"  ${desc}: already exists; continuing.\"\
+    \n      else\n        echo \"ERROR: ${desc} returned HTTP 422: $(cat \"${body_file}\")\" >&2\n        rc=1\n      fi\n\
+    \      ;;\n    *)\n      echo \"ERROR: ${desc} returned HTTP ${status}: $(cat \"${body_file}\")\" >&2\n      rc=1\n  \
+    \    ;;\n  esac\n  rm -f \"${body_file}\"\n  return \"${rc}\"\n}\n\necho \"Waiting for Gitea at ${BASE} ...\"\nHEALTHY=false\n\
     for _ in $(seq 1 60); do\n  if curl -fsS \"${BASE}/api/healthz\" >/dev/null 2>&1; then\n    echo \"Gitea is healthy.\"\
     \n    HEALTHY=true\n    break\n  fi\n  sleep 2\ndone\nif [ \"${HEALTHY}\" != \"true\" ]; then\n  echo \"ERROR: Gitea did\
     \ not become healthy within 120s\" >&2\n  exit 1\nfi\n\necho \"Creating admin user ${ADMIN_USER} (idempotent) ...\"\n\

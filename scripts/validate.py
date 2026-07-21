@@ -511,7 +511,10 @@ def _shared_reference_universe(
     """
     # A shared org may publish resources only when exactly one directory entry
     # is flagged shared AND active AND carries a non-empty string slug. Zero or
-    # an ambiguous multiple yields no shared universe (fail closed).
+    # an ambiguous multiple yields no shared universe (fail closed). The flags
+    # must be genuine YAML booleans: `is True` rejects a quoted "false"/"true"
+    # string (which YAML parses to a truthy str), so a malformed flag never
+    # conjures a shared universe that would satisfy cross-tenant references.
     shared_slugs: set[str] = set()
     for bundle in merged_bundles.values():
         for entry in bundle.get("organizations", []) or []:
@@ -519,8 +522,8 @@ def _shared_reference_universe(
                 continue
             slug = entry.get("slug")
             if (
-                entry.get("is_shared")
-                and entry.get("is_active")
+                entry.get("is_shared") is True
+                and entry.get("is_active") is True
                 and isinstance(slug, str)
                 and slug.strip()
             ):

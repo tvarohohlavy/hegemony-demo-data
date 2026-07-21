@@ -37,10 +37,13 @@ ORG="${GITEA_ORG:-meridian}"
 GIT_USER="x-access-token"
 WRITE_PASSWORD="${WRITE_PASSWORD:-}"
 
-# Call a Gitea API endpoint with the admin credentials, treating a genuine
-# duplicate (409/422) as an idempotent success but surfacing auth/network/server
-# failures instead of masking them all as "already exists". Never echoes the
-# request body, so secrets passed in ${data} stay out of logs.
+# Call a Gitea API endpoint with the admin credentials. A genuine duplicate is
+# an idempotent success, but a 422 is ambiguous — Gitea returns it both for
+# "already exists" AND for real validation errors (bad password, invalid name),
+# so the body is inspected and only an already-exists 422 is ignored; every
+# other 422 and any auth/network/server failure is surfaced. The request body is
+# never echoed and Gitea does not reflect submitted passwords in responses, so
+# secrets passed in ${data} stay out of logs even when an error body is printed.
 #   gitea_api "<description>" <METHOD> <url> [json-body]
 gitea_api() {
   desc="$1"
@@ -48,28 +51,42 @@ gitea_api() {
   url="$3"
   data="$4"
   echo "Provisioning ${desc} (idempotent) ..."
+  body_file=$(mktemp 2>/dev/null || echo "/tmp/gitea_api_body.$$")
   if [ -n "${data}" ]; then
     status=$(curl -sS -u "${ADMIN_USER}:${ADMIN_PASSWORD}" -X "${method}" "${url}" \
       -H 'Content-Type: application/json' -d "${data}" \
-      -o /dev/null -w '%{http_code}') || {
+      -o "${body_file}" -w '%{http_code}') || {
       echo "ERROR: request for ${desc} failed (network/connection)" >&2
+      rm -f "${body_file}"
       return 1
     }
   else
     status=$(curl -sS -u "${ADMIN_USER}:${ADMIN_PASSWORD}" -X "${method}" "${url}" \
-      -o /dev/null -w '%{http_code}') || {
+      -o "${body_file}" -w '%{http_code}') || {
       echo "ERROR: request for ${desc} failed (network/connection)" >&2
+      rm -f "${body_file}"
       return 1
     }
   fi
+  rc=0
   case "${status}" in
     200 | 201 | 204) echo "  ${desc}: ok (HTTP ${status})." ;;
-    409 | 422) echo "  ${desc}: already exists; continuing." ;;
+    409) echo "  ${desc}: already exists; continuing." ;;
+    422)
+      if grep -qiE 'already (exists|taken|used)' "${body_file}"; then
+        echo "  ${desc}: already exists; continuing."
+      else
+        echo "ERROR: ${desc} returned HTTP 422: $(cat "${body_file}")" >&2
+        rc=1
+      fi
+      ;;
     *)
-      echo "ERROR: ${desc} returned HTTP ${status}" >&2
-      return 1
+      echo "ERROR: ${desc} returned HTTP ${status}: $(cat "${body_file}")" >&2
+      rc=1
       ;;
   esac
+  rm -f "${body_file}"
+  return "${rc}"
 }
 
 echo "Waiting for Gitea at ${BASE} ..."

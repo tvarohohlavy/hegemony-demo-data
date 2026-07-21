@@ -22,6 +22,7 @@ tasks:
     cmds:
       - PYTHONDONTWRITEBYTECODE=1 uv run python scripts/build.py --check
       - PYTHONDONTWRITEBYTECODE=1 uv run python scripts/validate.py
+      - PYTHONDONTWRITEBYTECODE=1 uv run python -m unittest discover -s tests -p 'test_*.py'
 
   validate:
     desc: Validate semantic references in source bundles
