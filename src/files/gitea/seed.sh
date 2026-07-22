@@ -37,13 +37,27 @@ ORG="${GITEA_ORG:-meridian}"
 GIT_USER="x-access-token"
 WRITE_PASSWORD="${WRITE_PASSWORD:-}"
 
+# Feed the admin credentials to curl through a config file (-K) instead of -u,
+# and request bodies through a file (--data @) instead of -d, so neither the
+# password nor the JSON payload (which itself may carry a password) ever appears
+# in the process argument list. mktemp yields a private (0600) file; it is
+# removed when the script exits.
+CURL_AUTH_CONFIG=$(mktemp 2>/dev/null) || {
+  echo "ERROR: cannot create a secure temporary file for curl authentication" >&2
+  exit 1
+}
+trap 'rm -f "${CURL_AUTH_CONFIG}"' EXIT
+printf 'user = "%s:%s"\n' "${ADMIN_USER}" "${ADMIN_PASSWORD}" >"${CURL_AUTH_CONFIG}"
+
 # Call a Gitea API endpoint with the admin credentials. A genuine duplicate is
 # an idempotent success, but a 422 is ambiguous — Gitea returns it both for
 # "already exists" AND for real validation errors (bad password, invalid name),
 # so the body is inspected and only an already-exists 422 is ignored; every
-# other 422 and any auth/network/server failure is surfaced. The request body is
-# never echoed and Gitea does not reflect submitted passwords in responses, so
-# secrets passed in ${data} stay out of logs even when an error body is printed.
+# other 422 and any auth/network/server failure is surfaced. Credentials and
+# request bodies travel via files (never argv), and Gitea does not reflect
+# submitted passwords in responses, so nothing secret reaches logs or the
+# process table even when an error body is printed. Requests are time-bounded so
+# a stalled endpoint cannot hang the seed.
 #   gitea_api "<description>" <METHOD> <url> [json-body]
 gitea_api() {
   desc="$1"
@@ -51,17 +65,29 @@ gitea_api() {
   url="$3"
   data="$4"
   echo "Provisioning ${desc} (idempotent) ..."
-  body_file=$(mktemp 2>/dev/null || echo "/tmp/gitea_api_body.$$")
+  body_file=$(mktemp 2>/dev/null) || {
+    echo "ERROR: cannot create a secure temporary response file" >&2
+    return 1
+  }
   if [ -n "${data}" ]; then
-    status=$(curl -sS -u "${ADMIN_USER}:${ADMIN_PASSWORD}" -X "${method}" "${url}" \
-      -H 'Content-Type: application/json' -d "${data}" \
-      -o "${body_file}" -w '%{http_code}') || {
-      echo "ERROR: request for ${desc} failed (network/connection)" >&2
+    data_file=$(mktemp 2>/dev/null) || {
+      echo "ERROR: cannot create a secure temporary request file" >&2
       rm -f "${body_file}"
       return 1
     }
+    printf '%s' "${data}" >"${data_file}"
+    status=$(curl -sS -K "${CURL_AUTH_CONFIG}" --connect-timeout 10 --max-time 60 \
+      -X "${method}" "${url}" \
+      -H 'Content-Type: application/json' --data @"${data_file}" \
+      -o "${body_file}" -w '%{http_code}') || {
+      echo "ERROR: request for ${desc} failed (network/connection)" >&2
+      rm -f "${body_file}" "${data_file}"
+      return 1
+    }
+    rm -f "${data_file}"
   else
-    status=$(curl -sS -u "${ADMIN_USER}:${ADMIN_PASSWORD}" -X "${method}" "${url}" \
+    status=$(curl -sS -K "${CURL_AUTH_CONFIG}" --connect-timeout 10 --max-time 60 \
+      -X "${method}" "${url}" \
       -o "${body_file}" -w '%{http_code}') || {
       echo "ERROR: request for ${desc} failed (network/connection)" >&2
       rm -f "${body_file}"
@@ -92,7 +118,7 @@ gitea_api() {
 echo "Waiting for Gitea at ${BASE} ..."
 HEALTHY=false
 for _ in $(seq 1 60); do
-  if curl -fsS "${BASE}/api/healthz" >/dev/null 2>&1; then
+  if curl -fsS --connect-timeout 5 --max-time 10 "${BASE}/api/healthz" >/dev/null 2>&1; then
     echo "Gitea is healthy."
     HEALTHY=true
     break
@@ -105,6 +131,11 @@ if [ "${HEALTHY}" != "true" ]; then
 fi
 
 echo "Creating admin user ${ADMIN_USER} (idempotent) ..."
+# The first admin must be bootstrapped with Gitea's CLI (the API needs an
+# existing admin to authenticate). The CLI has no password-stdin option, so this
+# one call passes the password as an argument; it runs inside the disposable
+# Gitea container with a synthetic demo credential. Every subsequent API call
+# keeps credentials out of argv (see gitea_api above).
 docker exec "${GITEA_CONTAINER}" gitea admin user create \
   --username "${ADMIN_USER}" \
   --password "${ADMIN_PASSWORD}" \
