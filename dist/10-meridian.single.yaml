@@ -11,6 +11,11 @@ secrets:
   values:
     username: meridian-admin
     password: demo-gitea-admin-password
+- name: meridian-gitea-token
+  description: Password for Hegemony's Gitea backup service account (flow + platform sync).
+  folder: orgs/default/secrets/meridian/gitea/token
+  values:
+    token: demo-gitea-write-password
 - name: meridian-lab-ssh
   description: SSH login for the containerlab FRR routers.
   folder: orgs/default/secrets/meridian/lab/ssh
@@ -608,6 +613,7 @@ flows:
             GITEA_ORG: '{{ vars.GITEA_ORG }}'
             ADMIN_USER: '{{ secret(''vault://orgs/default/secrets/meridian/gitea/admin/username'') }}'
             ADMIN_PASSWORD: '{{ secret(''vault://orgs/default/secrets/meridian/gitea/admin/password'') }}'
+            WRITE_PASSWORD: '{{ secret(''vault://orgs/default/secrets/meridian/gitea/token/token'') }}'
           command:
           - "DEPLOY=$(printf '%s' \"{{ inputs.deploy_gitea }}\" | tr 'A-Z' 'a-z')\ncase \"$DEPLOY\" in\n  true|1|yes) ;;\n\
             \  *)\n    echo \"Gitea deployment skipped (deploy_gitea unchecked).\"\n    exit 0\n    ;;\nesac\nset -e\ndocker\
@@ -1330,6 +1336,11 @@ flows:
 - name: 'Net: Lab routing health check'
   description: Verify the selected routers are reachable and their OSPF adjacencies are Full. Runs a TCP reachability probe,
     collects OSPF state, and asserts on the neighbor output.
+  git_repository: flow-backups
+  git_path: flows/net-lab-routing-health-check.yaml
+  git_branch: main
+  sync_mode: synced
+  auto_commit: true
   definition:
     graph:
       nodes:
@@ -1709,7 +1720,7 @@ flow_attachments:
     #\n# Lightweight Linux endpoint for the Meridian lab: an Alpine host with sshd so\n# Hegemony's shell.execute handler\
     \ can log in like to any server, plus\n# iproute2/iputils for end-to-end reachability tests across the routed fabric.\n\
     # ping gets cap_net_raw so the non-root login can run it.\n#\n# Built locally by \"Lab: Provision and tear down demo datacenter\"\
-    \ and\n# referenced from topology.clab.yml as image \"meridian/lab-host:latest\".\nFROM alpine:3.20\n\n# The login password\
+    \ and\n# referenced from topology.clab.yml as image \"meridian/lab-host:latest\".\nFROM alpine:3.22\n\n# The login password\
     \ is injected at build time from the meridian-lab-ssh vault\n# secret (same credential the git inventory provider hands\
     \ to the routers).\nARG LAB_PASSWORD=demo-lab-password\n\nRUN apk add --no-cache openssh iproute2 iputils libcap-utils\
     \ \\\n    && ssh-keygen -A \\\n    && sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config\
@@ -1970,23 +1981,79 @@ flow_attachments:
 - flow: 'Lab: Provision and tear down demo datacenter'
   filename: seed.sh
   content: "#!/bin/sh\n# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>\n# SPDX-License-Identifier:\
-    \ AGPL-3.0-or-later\n#\n# Provision the demo Gitea so the config-backup flow has somewhere to push:\n# wait for health,\
-    \ create the admin account, then create a public org and an\n# auto-initialised config-backups repository. Idempotent\
-    \ — safe to re-run.\nset -e\n\nGITEA_CONTAINER=\"${GITEA_CONTAINER:-meridian-gitea}\"\nBASE=\"${GITEA_URL:-http://host.docker.internal:3000}\"\
-    \nADMIN_USER=\"${ADMIN_USER:-meridian-admin}\"\nADMIN_PASSWORD=\"${ADMIN_PASSWORD:-demo-gitea-admin-password}\"\nORG=\"\
-    ${GITEA_ORG:-meridian}\"\n\necho \"Waiting for Gitea at ${BASE} ...\"\nHEALTHY=false\nfor _ in $(seq 1 60); do\n  if curl\
-    \ -fsS \"${BASE}/api/healthz\" >/dev/null 2>&1; then\n    echo \"Gitea is healthy.\"\n    HEALTHY=true\n    break\n  fi\n\
-    \  sleep 2\ndone\nif [ \"${HEALTHY}\" != \"true\" ]; then\n  echo \"ERROR: Gitea did not become healthy within 120s\"\
-    \ >&2\n  exit 1\nfi\n\necho \"Creating admin user ${ADMIN_USER} (idempotent) ...\"\ndocker exec \"${GITEA_CONTAINER}\"\
-    \ gitea admin user create \\\n  --username \"${ADMIN_USER}\" \\\n  --password \"${ADMIN_PASSWORD}\" \\\n  --email \"${ADMIN_USER}@meridian.example\"\
-    \ \\\n  --admin --must-change-password=false \\\n  || echo \"admin user already exists; continuing\"\n\necho \"Creating\
-    \ public org ${ORG} (idempotent) ...\"\ncurl -fsS -u \"${ADMIN_USER}:${ADMIN_PASSWORD}\" -X POST \"${BASE}/api/v1/orgs\"\
-    \ \\\n  -H 'Content-Type: application/json' \\\n  -d \"{\\\"username\\\":\\\"${ORG}\\\",\\\"visibility\\\":\\\"public\\\
-    \"}\" \\\n  || echo \"org already exists; continuing\"\n\necho \"Creating config-backups repository (idempotent) ...\"\
-    \ncurl -fsS -u \"${ADMIN_USER}:${ADMIN_PASSWORD}\" -X POST \"${BASE}/api/v1/orgs/${ORG}/repos\" \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{\"name\":\"config-backups\",\"private\":false,\"auto_init\":true,\"default_branch\":\"\
-    main\"}' \\\n  || echo \"repository already exists; continuing\"\n\necho \"Gitea seeded: ${BASE}/${ORG}/config-backups\"\
-    \n"
+    \ AGPL-3.0-or-later\n#\n# Provision the demo Gitea so the backup integrations have somewhere to push:\n# wait for health,\
+    \ create the admin account and a public org, then create the\n# auto-initialised backup repositories:\n#   * config-backups\
+    \   — pushed to by the \"Ops: Backup lab configs to Git\" flow\n#                        from inside its own container\
+    \ (HTTP basic auth).\n#   * flow-backups     — Hegemony's native flow Git-sync writes flow definitions\n#            \
+    \            here (see the flow's Git section in the demo bundle).\n#   * platform-backups — the \"Meridian platform config\
+    \ backup\" Platform Sync\n#                        profile (imported from the bundle) exports platform\n#            \
+    \            config here; run its export from the Platform Sync UI.\n#\n# The two native-write repos need a credential:\
+    \ Hegemony authenticates git over\n# HTTP by sending the fixed username \"x-access-token\" and a secret value as the\n\
+    # Basic-auth password. Rather than mint an access token (a random value that\n# would have to be captured and stored —\
+    \ and must never reach run/container\n# logs), this seed provisions a dedicated Gitea SERVICE ACCOUNT literally named\n\
+    # \"x-access-token\" whose password IS the meridian-gitea-token secret, and grants\n# it write on the two backup repos.\
+    \ Gitea, seeing a password that is not an\n# access token, falls back to a normal username+password login — so the backups\n\
+    # authenticate out of the box with no token to mint or print. The password comes\n# in as WRITE_PASSWORD (resolved from\
+    \ the same secret Hegemony reads), so the two\n# ends always match.\n# Idempotent — safe to re-run.\nset -e\n\nGITEA_CONTAINER=\"\
+    ${GITEA_CONTAINER:-meridian-gitea}\"\nBASE=\"${GITEA_URL:-http://host.docker.internal:3000}\"\nADMIN_USER=\"${ADMIN_USER:-meridian-admin}\"\
+    \nADMIN_PASSWORD=\"${ADMIN_PASSWORD:-demo-gitea-admin-password}\"\nORG=\"${GITEA_ORG:-meridian}\"\n# The service account\
+    \ Hegemony authenticates as. Its name MUST equal the fixed\n# username Hegemony's git client sends (see apps/api/services/git_ops.py).\n\
+    GIT_USER=\"x-access-token\"\nWRITE_PASSWORD=\"${WRITE_PASSWORD:-}\"\n\n# Feed the admin credentials to curl through a\
+    \ config file (-K) instead of -u,\n# and request bodies through a file (--data @) instead of -d, so neither the\n# password\
+    \ nor the JSON payload (which itself may carry a password) ever appears\n# in the process argument list. mktemp yields\
+    \ a private (0600) file; it is\n# removed when the script exits.\nCURL_AUTH_CONFIG=$(mktemp 2>/dev/null) || {\n  echo\
+    \ \"ERROR: cannot create a secure temporary file for curl authentication\" >&2\n  exit 1\n}\ntrap 'rm -f \"${CURL_AUTH_CONFIG}\"\
+    ' EXIT\nprintf 'user = \"%s:%s\"\\n' \"${ADMIN_USER}\" \"${ADMIN_PASSWORD}\" >\"${CURL_AUTH_CONFIG}\"\n\n# Call a Gitea\
+    \ API endpoint with the admin credentials. A genuine duplicate is\n# an idempotent success, but a 422 is ambiguous — Gitea\
+    \ returns it both for\n# \"already exists\" AND for real validation errors (bad password, invalid name),\n# so the body\
+    \ is inspected and only an already-exists 422 is ignored; every\n# other 422 and any auth/network/server failure is surfaced.\
+    \ Credentials and\n# request bodies travel via files (never argv), and Gitea does not reflect\n# submitted passwords in\
+    \ responses, so nothing secret reaches logs or the\n# process table even when an error body is printed. Requests are time-bounded\
+    \ so\n# a stalled endpoint cannot hang the seed.\n#   gitea_api \"<description>\" <METHOD> <url> [json-body]\ngitea_api()\
+    \ {\n  desc=\"$1\"\n  method=\"$2\"\n  url=\"$3\"\n  data=\"$4\"\n  echo \"Provisioning ${desc} (idempotent) ...\"\n \
+    \ body_file=$(mktemp 2>/dev/null) || {\n    echo \"ERROR: cannot create a secure temporary response file\" >&2\n    return\
+    \ 1\n  }\n  if [ -n \"${data}\" ]; then\n    data_file=$(mktemp 2>/dev/null) || {\n      echo \"ERROR: cannot create a\
+    \ secure temporary request file\" >&2\n      rm -f \"${body_file}\"\n      return 1\n    }\n    printf '%s' \"${data}\"\
+    \ >\"${data_file}\"\n    status=$(curl -sS -K \"${CURL_AUTH_CONFIG}\" --connect-timeout 10 --max-time 60 \\\n      -X\
+    \ \"${method}\" \"${url}\" \\\n      -H 'Content-Type: application/json' --data @\"${data_file}\" \\\n      -o \"${body_file}\"\
+    \ -w '%{http_code}') || {\n      echo \"ERROR: request for ${desc} failed (network/connection)\" >&2\n      rm -f \"${body_file}\"\
+    \ \"${data_file}\"\n      return 1\n    }\n    rm -f \"${data_file}\"\n  else\n    status=$(curl -sS -K \"${CURL_AUTH_CONFIG}\"\
+    \ --connect-timeout 10 --max-time 60 \\\n      -X \"${method}\" \"${url}\" \\\n      -o \"${body_file}\" -w '%{http_code}')\
+    \ || {\n      echo \"ERROR: request for ${desc} failed (network/connection)\" >&2\n      rm -f \"${body_file}\"\n    \
+    \  return 1\n    }\n  fi\n  rc=0\n  case \"${status}\" in\n    200 | 201 | 204) echo \"  ${desc}: ok (HTTP ${status}).\"\
+    \ ;;\n    409) echo \"  ${desc}: already exists; continuing.\" ;;\n    422)\n      if grep -qiE 'already (exists|taken|used)'\
+    \ \"${body_file}\"; then\n        echo \"  ${desc}: already exists; continuing.\"\n      else\n        echo \"ERROR: ${desc}\
+    \ returned HTTP 422: $(cat \"${body_file}\")\" >&2\n        rc=1\n      fi\n      ;;\n    *)\n      echo \"ERROR: ${desc}\
+    \ returned HTTP ${status}: $(cat \"${body_file}\")\" >&2\n      rc=1\n      ;;\n  esac\n  rm -f \"${body_file}\"\n  return\
+    \ \"${rc}\"\n}\n\necho \"Waiting for Gitea at ${BASE} ...\"\nHEALTHY=false\nfor _ in $(seq 1 60); do\n  if curl -fsS --connect-timeout\
+    \ 5 --max-time 10 \"${BASE}/api/healthz\" >/dev/null 2>&1; then\n    echo \"Gitea is healthy.\"\n    HEALTHY=true\n  \
+    \  break\n  fi\n  sleep 2\ndone\nif [ \"${HEALTHY}\" != \"true\" ]; then\n  echo \"ERROR: Gitea did not become healthy\
+    \ within 120s\" >&2\n  exit 1\nfi\n\necho \"Creating admin user ${ADMIN_USER} (idempotent) ...\"\n# The first admin must\
+    \ be bootstrapped with Gitea's CLI (the API needs an\n# existing admin to authenticate). The CLI has no password-stdin\
+    \ option, so this\n# one call passes the password as an argument; it runs inside the disposable\n# Gitea container with\
+    \ a synthetic demo credential. Every subsequent API call\n# keeps credentials out of argv (see gitea_api above).\ndocker\
+    \ exec \"${GITEA_CONTAINER}\" gitea admin user create \\\n  --username \"${ADMIN_USER}\" \\\n  --password \"${ADMIN_PASSWORD}\"\
+    \ \\\n  --email \"${ADMIN_USER}@meridian.example\" \\\n  --admin --must-change-password=false \\\n  || echo \"admin user\
+    \ already exists; continuing\"\n\ngitea_api \"org ${ORG}\" POST \"${BASE}/api/v1/orgs\" \\\n  \"{\\\"username\\\":\\\"\
+    ${ORG}\\\",\\\"visibility\\\":\\\"public\\\"}\"\n\nfor REPO in config-backups flow-backups platform-backups; do\n  gitea_api\
+    \ \"${REPO} repository\" POST \"${BASE}/api/v1/orgs/${ORG}/repos\" \\\n    \"{\\\"name\\\":\\\"${REPO}\\\",\\\"private\\\
+    \":false,\\\"auto_init\\\":true,\\\"default_branch\\\":\\\"main\\\"}\"\ndone\n\n# --- Native-write backups: the Hegemony\
+    \ service account -------------------\n# Provision the \"x-access-token\" account and give it write on the two repos\n\
+    # Hegemony pushes to. With no real password we cannot create the account, so\n# skip gracefully (the anonymous reads still\
+    \ work; only the pushes would fail).\nif [ -z \"${WRITE_PASSWORD}\" ] || [ \"${WRITE_PASSWORD}\" = \"DEMO_GITEA_WRITE_TOKEN_PLACEHOLDER\"\
+    \ ]; then\n  echo \"meridian-gitea-token is unset/placeholder; skipping the ${GIT_USER} service account.\"\n  echo \"\
+    \  Set the meridian-gitea-token secret and re-run the Lab flow to enable native git backups.\"\nelse\n  gitea_api \"service\
+    \ account ${GIT_USER}\" POST \"${BASE}/api/v1/admin/users\" \\\n    \"{\\\"username\\\":\\\"${GIT_USER}\\\",\\\"full_name\\\
+    \":\\\"Hegemony backup service account\\\",\\\"email\\\":\\\"${GIT_USER}@meridian.example\\\",\\\"password\\\":\\\"${WRITE_PASSWORD}\\\
+    \",\\\"must_change_password\\\":false}\"\n  # Converge the password to the current secret value on every run, so rotating\n\
+    \  # the secret and re-running the flow keeps the two ends in sync.\n  gitea_api \"service account password\" PATCH \"\
+    ${BASE}/api/v1/admin/users/${GIT_USER}\" \\\n    \"{\\\"login_name\\\":\\\"${GIT_USER}\\\",\\\"source_id\\\":0,\\\"password\\\
+    \":\\\"${WRITE_PASSWORD}\\\",\\\"must_change_password\\\":false}\"\n  for REPO in flow-backups platform-backups; do\n\
+    \    gitea_api \"write access to ${REPO}\" PUT \\\n      \"${BASE}/api/v1/repos/${ORG}/${REPO}/collaborators/${GIT_USER}\"\
+    \ \\\n      \"{\\\"permission\\\":\\\"write\\\"}\"\n  done\nfi\n\necho \"Gitea seeded: ${BASE}/${ORG}/{config-backups,flow-backups,platform-backups}\"\
+    \necho \"  flow-backups and platform-backups are writable by Hegemony out of the box:\"\necho \"  the ${GIT_USER} service\
+    \ account authenticates with the meridian-gitea-token\"\necho \"  secret as its password. Nothing secret is minted or\
+    \ printed here.\"\n"
 variables:
 - name: ORG_NAME
   value: Meridian Networks
@@ -2218,3 +2285,18 @@ flow_subscriptions:
   destination: Meridian NOC Email
   event: approval.requested
   enabled: true
+platform_sync_profiles:
+- name: Meridian platform config backup
+  description: Export Meridian's platform configuration (everything except flows, which are versioned to flow-backups) to
+    the platform-backups Gitea repository.
+  mode: backup
+  git_repository: platform-backups
+  branch: main
+  base_path: platform
+  enabled: true
+  schedule_enabled: false
+  excluded_families:
+  - flow
+  - flow_notification_subscription
+  destructive_policy: block
+  auto_apply_non_destructive: false

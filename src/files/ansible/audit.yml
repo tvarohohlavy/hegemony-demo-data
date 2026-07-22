@@ -22,22 +22,27 @@
         state: directory
         mode: "0755"
 
-    - name: Assert the golden standards are all defined
-      ansible.builtin.assert:
-        that:
-          - ntp | length > 0
-          - dns | length > 0
-          - syslog | length > 0
-        success_msg: "All golden standards are present for {{ tenant }}."
-        fail_msg: "One or more golden standards is unset for {{ tenant }}."
+    - name: Evaluate the golden standards
+      ansible.builtin.set_fact:
+        standards_ok: "{{ (ntp | length > 0) and (dns | length > 0) and (syslog | length > 0) }}"
 
+    # Always write the report first — including the FAIL path — so the run has an
+    # audit artifact recording the tenant, standards and result even when a
+    # standard is unset and the assertion below aborts the play.
     - name: Render the audit report
       ansible.builtin.copy:
         dest: /artifacts/new/ansible-audit.txt
         mode: "0644"
         content: |
           Ansible golden config audit — {{ tenant }}
-          NTP primary    : {{ ntp }}
-          DNS primary    : {{ dns }}
-          Syslog primary : {{ syslog }}
-          Result         : PASS (all standards present)
+          NTP primary    : {{ ntp | default('<unset>', true) }}
+          DNS primary    : {{ dns | default('<unset>', true) }}
+          Syslog primary : {{ syslog | default('<unset>', true) }}
+          Result         : {{ 'PASS (all standards present)' if standards_ok | bool else 'FAIL (one or more standards unset)' }}
+
+    - name: Assert the golden standards are all defined
+      ansible.builtin.assert:
+        that:
+          - standards_ok | bool
+        success_msg: "All golden standards are present for {{ tenant }}."
+        fail_msg: "One or more golden standards is unset for {{ tenant }}."

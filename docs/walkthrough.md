@@ -112,11 +112,29 @@ against). They become *reachable* only once the lab is stood up.
    standards — note it prints `ntp=192.0.2.123`, resolved from the **shared** org
    (see Act 4 for the contrast). And **"Net: End-to-end reachability test"** opens
    with the four **endpoint hosts preselected** as probe sources.
+6. **Native Git backups.** That flow pushes from *inside its container*; two more
+   Gitea repositories are wired for Hegemony to write to *itself* — and they work
+   **out of the box** once the Lab flow has stood Gitea up. There is no token to
+   create: the seed provisions a dedicated Gitea service account (`x-access-token`,
+   the username Hegemony's git client always sends) whose password is the
+   **`meridian-gitea-token`** secret, and grants it write on both repos, so
+   Hegemony authenticates automatically.
+   * **flow-backups** — **"Net: Lab routing health check"** is in **Git-sync**
+     mode. Open it, make a trivial edit and save: its canonical YAML is committed
+     and pushed to `flow-backups`. Inspect it under **Git Repositories**.
+   * **platform-backups** — the **"Meridian platform config backup"** Platform
+     Sync profile is already provisioned (it imported from the bundle). Open
+     **Platform Sync**, run its **export**, and the platform configuration
+     (variables, sites, git repos, notifications, schedules, webhooks — flows
+     excluded, those go to flow-backups) is snapshotted to `platform-backups`.
+   Until Gitea is up (stood up by the Lab flow) these pushes fail and retry —
+   expected on a fresh demo; they succeed as soon as the service account exists.
 
 > **Feature:** a git inventory provider synced at bootstrap so its devices are
 > present from first boot, the MSP's own lab flows with **preselected default
 > targets**, the containerlab, parallel flow execution, approval gates,
-> notifications, git-backed backups, and shared-variable resolution.
+> notifications, backups in three flavours (flow-container push, native flow
+> Git-sync, and Platform Sync export), and shared-variable resolution.
 
 ---
 

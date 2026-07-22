@@ -618,6 +618,18 @@ flows:
       Verify the selected routers are reachable and their OSPF adjacencies are
       Full. Runs a TCP reachability probe, collects OSPF state, and asserts on
       the neighbor output.
+    # Native flow Git-sync: this flow's definition is versioned to the
+    # flow-backups Gitea repository. In "synced" mode every save pushes the
+    # canonical YAML (auth via the flow-backups repo's auth_secret_ref, i.e. the
+    # Gitea x-access-token service account), so the flow doubles as a live demo
+    # of Hegemony writing flow definitions to Git. The push just needs Gitea up
+    # (stood up by the Lab flow); until then saves succeed locally and the
+    # background push simply retries.
+    git_repository: flow-backups
+    git_path: flows/net-lab-routing-health-check.yaml
+    git_branch: main
+    sync_mode: synced
+    auto_commit: true
     definition:
       graph:
         nodes:

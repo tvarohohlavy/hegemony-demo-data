@@ -8,16 +8,24 @@
 # private/internal addresses (SSRF protection):
 #   * hegemony-demo-data — THIS public repository, whose demo-inventory/ tree
 #     is read by the "lab-inventory" git provider (25-inventory-providers.yaml).
-#   * config-backups — the demo Gitea repository the backup flow pushes to.
-#     It is http:// on the Docker host, so this entry carries the per-repository
-#     allow_insecure_url opt-in (SSRF guard disabled for THIS repo only; every
-#     other repository stays protected). The repository is public on the demo
-#     Gitea, so it clones anonymously; it appears once "Lab: Provision and tear
-#     down demo datacenter" has stood Gitea up.
+#   * config-backups — the demo Gitea repository the backup FLOW pushes to from
+#     inside its own container. It is http:// on the Docker host, so this entry
+#     carries the per-repository allow_insecure_url opt-in (SSRF guard disabled
+#     for THIS repo only; every other repository stays protected). It is public
+#     on the demo Gitea, so it clones anonymously; the entries appear once "Lab:
+#     Provision and tear down demo datacenter" has stood Gitea up.
+#   * flow-backups / platform-backups — repositories Hegemony itself WRITES to
+#     through its native git integrations (not a flow container): flow-backups
+#     receives flow definitions via flow Git-sync, platform-backups receives
+#     platform config via a Platform Sync BACKUP profile. Because Hegemony
+#     pushes, they carry an auth_secret_ref pointing at the meridian-gitea-token
+#     secret. Hegemony authenticates as the fixed username "x-access-token" with
+#     that secret as the password; the Gitea seed provisions a matching
+#     "x-access-token" service account and grants it write here, so the pushes
+#     work out of the box once Gitea is up (no access token to mint or paste in).
 #
-# The backup flow itself pushes with credentials from inside its own container;
-# this read-only entry exists so operators can inspect the pushed backups in
-# Hegemony's repository browser.
+# The config-backups entry is read-only in Hegemony (the flow pushes with its
+# own container credentials); it exists so operators can browse the backups.
 
 schema_version: 2
 
@@ -31,3 +39,15 @@ git_repositories:
     branch: main
     sync_stale_seconds: 60
     allow_insecure_url: true
+  - name: flow-backups
+    url: "http://host.docker.internal:3000/meridian/flow-backups.git"
+    branch: main
+    sync_stale_seconds: 60
+    allow_insecure_url: true
+    auth_secret_ref: "{{ secret('vault://orgs/default/secrets/meridian/gitea/token/token') }}"
+  - name: platform-backups
+    url: "http://host.docker.internal:3000/meridian/platform-backups.git"
+    branch: main
+    sync_stale_seconds: 60
+    allow_insecure_url: true
+    auth_secret_ref: "{{ secret('vault://orgs/default/secrets/meridian/gitea/token/token') }}"
