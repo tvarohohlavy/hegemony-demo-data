@@ -627,6 +627,24 @@ flows:
         cancel_policy: wait
         position_x: 2160
         position_y: 300
+      - id: converge_check
+        name: Kick off OSPF convergence check
+        type: step
+        kind: EXECUTE
+        phase: IMPLEMENTATION
+        handler: flow.run
+        position_x: 2320
+        position_y: 500
+        params:
+          flow_name: 'Net: Wait for OSPF convergence'
+          wait_for_completion: false
+          field_mappings: {}
+          target_mappings: {}
+        policy:
+          timeout_sec: 60
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: false
       - id: hold
         name: Interact, then approve to tear down
         type: approval
@@ -737,8 +755,11 @@ flows:
       - id: e_gitea_join_fail
         source: deploy_gitea:failure
         target: join
-      - id: e_join_hold
+      - id: e_join_converge
         source: join:joined
+        target: converge_check
+      - id: e_converge_hold
+        source: converge_check:success
         target: hold
       - id: e_join_failed
         source: join:join_failed
@@ -1677,8 +1698,8 @@ flows:
       edges: []
 - name: 'Net: Wait for OSPF convergence'
   description: 'Retry-until-healthy: collect OSPF neighbor state from the selected routers in a loop until every adjacency
-    is Full (or give up after 6 attempts). Run-scoped variables track the attempt count and verdict; a branch after the loop
-    reports whether the fabric was converged on the first check or needed retries.'
+    is Full (or give up after 10 attempts, 5s apart). Run-scoped variables track the attempt count and verdict; a branch after
+    the loop reports whether the fabric was converged on the first check or needed retries.'
   definition:
     graph:
       nodes:
@@ -1702,8 +1723,8 @@ flows:
         type: loop
         loop_mode: until
         condition: run.vars.converged | default(false)
-        max_iterations: 6
-        iteration_delay_sec: 10
+        max_iterations: 10
+        iteration_delay_sec: 5
         position_x: 620
         position_y: 80
         width: 1260

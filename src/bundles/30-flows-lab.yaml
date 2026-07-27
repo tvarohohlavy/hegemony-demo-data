@@ -256,6 +256,28 @@ flows:
             cancel_policy: wait
             position_x: 2160
             position_y: 300
+          - id: converge_check
+            name: Kick off OSPF convergence check
+            type: step
+            kind: EXECUTE
+            phase: IMPLEMENTATION
+            handler: flow.run
+            position_x: 2320
+            position_y: 500
+            params:
+              # Portable name reference: the child flow's UUID is assigned at
+              # import time, so the bundle refers to it by name (resolved when
+              # the step runs). Fire-and-forget — the approval gate below must
+              # not wait for the convergence loop to finish.
+              flow_name: "Net: Wait for OSPF convergence"
+              wait_for_completion: false
+              field_mappings: {}
+              target_mappings: {}
+            policy:
+              timeout_sec: 60
+              retries: 0
+              on_failure: CONTINUE
+              evidence_required: false
           - id: hold
             name: Interact, then approve to tear down
             type: approval
@@ -389,8 +411,11 @@ flows:
           - id: e_gitea_join_fail
             source: deploy_gitea:failure
             target: join
-          - id: e_join_hold
+          - id: e_join_converge
             source: join:joined
+            target: converge_check
+          - id: e_converge_hold
+            source: converge_check:success
             target: hold
           - id: e_join_failed
             source: join:join_failed

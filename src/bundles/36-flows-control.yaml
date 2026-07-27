@@ -27,8 +27,9 @@ flows:
   - name: "Net: Wait for OSPF convergence"
     description: >-
       Retry-until-healthy: collect OSPF neighbor state from the selected
-      routers in a loop until every adjacency is Full (or give up after 6
-      attempts). Run-scoped variables track the attempt count and verdict; a
+      routers in a loop until every adjacency is Full (or give up after 10
+      attempts, 5s apart). Run-scoped variables track the attempt count and
+      verdict; a
       branch after the loop reports whether the fabric was converged on the
       first check or needed retries.
     definition:
@@ -54,10 +55,10 @@ flows:
             type: loop
             loop_mode: until
             condition: "run.vars.converged | default(false)"
-            max_iterations: 6
+            max_iterations: 10
             # Pace the poll: wait between re-checks instead of hammering the
-            # routers — 6 attempts x 10s rides out OSPF adjacency formation.
-            iteration_delay_sec: 10
+            # routers — 10 attempts x 5s rides out OSPF adjacency formation.
+            iteration_delay_sec: 5
             position_x: 620
             position_y: 80
             width: 1260
