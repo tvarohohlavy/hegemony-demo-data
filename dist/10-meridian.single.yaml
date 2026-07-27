@@ -2925,12 +2925,11 @@ flows:
           field_id: drift_targets
           field_type: inventory.device
           required: true
-          description: FRR routers audited for the golden loopback description — the core fabric, preselected. Remediation
-            is limited to this selection.
+          description: FRR routers audited for the golden loopback description. Preselects the cores the Terraform demo does
+            NOT manage — both demos stamp the same "interface lo" description, so overlapping targets would overwrite each
+            other's assertions. Remediation is limited to this selection.
           default_value:
-          - dc1-core-01
           - dc1-core-02
-          - dc2-core-01
           - dc2-core-02
           config:
             role: drift_targets
@@ -3373,10 +3372,12 @@ flow_attachments:
     \ |\n          {{ tenant }} lab server {{ inventory_hostname }} — baseline managed by Ansible.\n          Golden standards:\
     \ NTP {{ ntp | default('<unset>', true) }} / DNS {{ dns | default('<unset>', true) }} / syslog {{ syslog | default('<unset>',\
     \ true) }}\n\n    - name: Verify the baseline landed\n      ansible.builtin.command: cat /etc/meridian/baseline.env\n\
-    \      register: baseline_check\n      changed_when: false\n\n    - name: Assert the baseline records this tenant\n  \
-    \    ansible.builtin.assert:\n        that:\n          - \"('TENANT=' + tenant) in baseline_check.stdout\"\n        success_msg:\
-    \ \"Baseline present on {{ inventory_hostname }}.\"\n        fail_msg: \"Baseline file on {{ inventory_hostname }} does\
-    \ not record tenant {{ tenant }}.\"\n"
+    \      register: baseline_check\n      changed_when: false\n\n    - name: Assert the baseline records every golden standard\n\
+    \      ansible.builtin.assert:\n        that:\n          - \"('TENANT=' + tenant) in baseline_check.stdout_lines\"\n \
+    \         - \"('NTP_PRIMARY=' + ntp) in baseline_check.stdout_lines\"\n          - \"('DNS_PRIMARY=' + dns) in baseline_check.stdout_lines\"\
+    \n          - \"('SYSLOG_PRIMARY=' + syslog) in baseline_check.stdout_lines\"\n        success_msg: \"Baseline present\
+    \ on {{ inventory_hostname }}.\"\n        fail_msg: \"Baseline on {{ inventory_hostname }} does not match the golden standards.\"\
+    \n"
 - flow: 'IaC: Ansible server baseline rollout'
   filename: rolling.sh
   content: "#!/bin/sh\n# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier:\
@@ -3388,8 +3389,11 @@ flow_attachments:
     \ host is what trips the flow's\n# canary break edge and halts the rollout.\nset -eu\n\n: \"${TARGET_HOST:?TARGET_HOST\
     \ is required (the host to baseline)}\"\n: \"${LAB_USER:?LAB_USER is required}\"\n: \"${LAB_PASSWORD:?LAB_PASSWORD is\
     \ required}\"\n\napk add --no-cache ansible-core sshpass openssh-client >/dev/null\nmkdir -p /artifacts/new\n\nEXTRA_VARS=$(mktemp)\n\
-    trap 'rm -f \"${EXTRA_VARS}\"' EXIT\ncat >\"${EXTRA_VARS}\" <<EOF\nansible_user: \"${LAB_USER}\"\nansible_password: \"\
-    ${LAB_PASSWORD}\"\nansible_become_password: \"${LAB_PASSWORD}\"\nEOF\n\necho \"Applying server baseline to ${TARGET_HOST}\
+    trap 'rm -f \"${EXTRA_VARS}\"' EXIT\n# JSON is valid YAML and json.dump escapes anything a credential can\n# contain —\
+    \ quotes or newlines in the secret cannot corrupt the vars file.\npython3 - \"${EXTRA_VARS}\" <<'PY'\nimport json\nimport\
+    \ os\nimport sys\n\nwith open(sys.argv[1], \"w\") as handle:\n    json.dump(\n        {\n            \"ansible_user\"\
+    : os.environ[\"LAB_USER\"],\n            \"ansible_password\": os.environ[\"LAB_PASSWORD\"],\n            \"ansible_become_password\"\
+    : os.environ[\"LAB_PASSWORD\"],\n        },\n        handle,\n    )\nPY\n\necho \"Applying server baseline to ${TARGET_HOST}\
     \ ...\"\nLOG=\"/artifacts/new/baseline-${TARGET_HOST}.txt\"\nrc=0\nansible-playbook \\\n  -i /attachments/hosts.ini \\\
     \n  --limit \"${TARGET_HOST}\" \\\n  -e \"@${EXTRA_VARS}\" \\\n  /attachments/baseline.yml >\"${LOG}\" 2>&1 || rc=$?\n\
     cat \"${LOG}\"\nexit \"${rc}\"\n"
@@ -3586,10 +3590,13 @@ flow_attachments:
     \ step and the flow's while-loop retries.\nset -eu\n\n: \"${LIMIT_HOSTS:?LIMIT_HOSTS is required (comma-separated router\
     \ names)}\"\n: \"${LAB_USER:?LAB_USER is required}\"\n: \"${LAB_PASSWORD:?LAB_PASSWORD is required}\"\n\napk add --no-cache\
     \ ansible-core sshpass openssh-client >/dev/null\nmkdir -p /artifacts/new\n\nEXTRA_VARS=$(mktemp)\ntrap 'rm -f \"${EXTRA_VARS}\"\
-    ' EXIT\ncat >\"${EXTRA_VARS}\" <<EOF\nansible_user: \"${LAB_USER}\"\nansible_password: \"${LAB_PASSWORD}\"\nEOF\n\necho\
-    \ \"Remediating routers: ${LIMIT_HOSTS} ...\"\nLOG=\"/artifacts/new/remediation.txt\"\nrc=0\nansible-playbook \\\n  -i\
-    \ /attachments/routers.ini \\\n  --limit \"${LIMIT_HOSTS}\" \\\n  -e \"@${EXTRA_VARS}\" \\\n  /attachments/remediate.yml\
-    \ >\"${LOG}\" 2>&1 || rc=$?\ncat \"${LOG}\"\nexit \"${rc}\"\n"
+    ' EXIT\n# JSON is valid YAML and json.dump escapes anything a credential can\n# contain — quotes or newlines in the secret\
+    \ cannot corrupt the vars file.\npython3 - \"${EXTRA_VARS}\" <<'PY'\nimport json\nimport os\nimport sys\n\nwith open(sys.argv[1],\
+    \ \"w\") as handle:\n    json.dump(\n        {\n            \"ansible_user\": os.environ[\"LAB_USER\"],\n            \"\
+    ansible_password\": os.environ[\"LAB_PASSWORD\"],\n        },\n        handle,\n    )\nPY\n\necho \"Remediating routers:\
+    \ ${LIMIT_HOSTS} ...\"\nLOG=\"/artifacts/new/remediation.txt\"\nrc=0\nansible-playbook \\\n  -i /attachments/routers.ini\
+    \ \\\n  --limit \"${LIMIT_HOSTS}\" \\\n  -e \"@${EXTRA_VARS}\" \\\n  /attachments/remediate.yml >\"${LOG}\" 2>&1 || rc=$?\n\
+    cat \"${LOG}\"\nexit \"${rc}\"\n"
 variables:
 - name: ORG_NAME
   value: Meridian Networks

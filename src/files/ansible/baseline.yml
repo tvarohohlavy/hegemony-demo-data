@@ -46,9 +46,12 @@
       register: baseline_check
       changed_when: false
 
-    - name: Assert the baseline records this tenant
+    - name: Assert the baseline records every golden standard
       ansible.builtin.assert:
         that:
-          - "('TENANT=' + tenant) in baseline_check.stdout"
+          - "('TENANT=' + tenant) in baseline_check.stdout_lines"
+          - "('NTP_PRIMARY=' + ntp) in baseline_check.stdout_lines"
+          - "('DNS_PRIMARY=' + dns) in baseline_check.stdout_lines"
+          - "('SYSLOG_PRIMARY=' + syslog) in baseline_check.stdout_lines"
         success_msg: "Baseline present on {{ inventory_hostname }}."
-        fail_msg: "Baseline file on {{ inventory_hostname }} does not record tenant {{ tenant }}."
+        fail_msg: "Baseline on {{ inventory_hostname }} does not match the golden standards."

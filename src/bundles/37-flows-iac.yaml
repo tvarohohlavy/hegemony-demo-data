@@ -843,13 +843,13 @@ flows:
               field_type: inventory.device
               required: true
               description: >-
-                FRR routers audited for the golden loopback description — the
-                core fabric, preselected. Remediation is limited to this
-                selection.
+                FRR routers audited for the golden loopback description.
+                Preselects the cores the Terraform demo does NOT manage —
+                both demos stamp the same "interface lo" description, so
+                overlapping targets would overwrite each other's assertions.
+                Remediation is limited to this selection.
               default_value:
-                - dc1-core-01
                 - dc1-core-02
-                - dc2-core-01
                 - dc2-core-02
               config:
                 role: drift_targets

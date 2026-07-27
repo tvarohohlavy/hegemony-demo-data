@@ -18,10 +18,22 @@ mkdir -p /artifacts/new
 
 EXTRA_VARS=$(mktemp)
 trap 'rm -f "${EXTRA_VARS}"' EXIT
-cat >"${EXTRA_VARS}" <<EOF
-ansible_user: "${LAB_USER}"
-ansible_password: "${LAB_PASSWORD}"
-EOF
+# JSON is valid YAML and json.dump escapes anything a credential can
+# contain — quotes or newlines in the secret cannot corrupt the vars file.
+python3 - "${EXTRA_VARS}" <<'PY'
+import json
+import os
+import sys
+
+with open(sys.argv[1], "w") as handle:
+    json.dump(
+        {
+            "ansible_user": os.environ["LAB_USER"],
+            "ansible_password": os.environ["LAB_PASSWORD"],
+        },
+        handle,
+    )
+PY
 
 echo "Remediating routers: ${LIMIT_HOSTS} ..."
 LOG="/artifacts/new/remediation.txt"
