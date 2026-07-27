@@ -1425,7 +1425,10 @@ flows:
           command: show ip ospf neighbor
           operator: contains
           expected: Full
-          message: OSPF neighbors are not Full on at least one router.
+          match_scope: lines
+          line_filter: ^\s*\d+\.\d+\.\d+\.\d+
+          min_lines: 1
+          message: OSPF neighbors are not Full (or absent) on at least one router.
         policy:
           timeout_sec: 60
           retries: 0
@@ -1971,8 +1974,11 @@ flows:
           target_role: audit_targets
           command: show ip route {{ loop.item }}
           operator: contains
-          expected: Routing entry for
-          message: A router has no route for {{ loop.item }}.
+          expected: '{{ loop.item }}'
+          match_scope: lines
+          line_filter: '^Routing entry for '
+          min_lines: 1
+          message: A router has no routing entry for {{ loop.item }}.
         policy:
           timeout_sec: 60
           retries: 0
@@ -2164,7 +2170,7 @@ flows:
         name: For each server
         type: loop
         loop_mode: for_each
-        items_expr: inputs.baseline_hosts
+        items_expr: targets.baseline_targets | map(attribute='name') | list
         max_iterations: 16
         collect: loop.item
         position_x: 600
@@ -2367,7 +2373,7 @@ flows:
           env:
             TF_VAR_service_name: '{{ inputs.service_name }}'
             TF_VAR_service_prefix: '{{ inputs.service_prefix }}'
-            TF_VAR_routers: '{{ inputs.tf_targets | tojson }}'
+            TF_VAR_routers: '{{ targets.tf_targets | map(attribute=''name'') | list | tojson }}'
         policy:
           timeout_sec: 300
           retries: 0
@@ -2453,7 +2459,7 @@ flows:
           env:
             TF_VAR_service_name: '{{ inputs.service_name }}'
             TF_VAR_service_prefix: '{{ inputs.service_prefix }}'
-            TF_VAR_routers: '{{ inputs.tf_targets | tojson }}'
+            TF_VAR_routers: '{{ targets.tf_targets | map(attribute=''name'') | list | tojson }}'
         policy:
           timeout_sec: 300
           retries: 0
@@ -2514,7 +2520,10 @@ flows:
           target_role: tf_targets
           command: show running-config
           operator: contains
-          expected: svc {{ inputs.service_name }} managed-by-terraform
+          expected: managed-by-terraform
+          match_scope: lines
+          line_filter: 'description svc {{ inputs.service_name }} '
+          min_lines: 1
           message: A target router does not carry the declared service loopback.
         policy:
           timeout_sec: 60
@@ -2813,7 +2822,7 @@ flows:
           command:
           - sh /attachments/remediate.sh
           env:
-            LIMIT_HOSTS: '{{ inputs.drift_targets | join('','') }}'
+            LIMIT_HOSTS: '{{ targets.drift_targets | map(attribute=''name'') | join('','') }}'
             LAB_USER: '{{ secret(''vault://orgs/default/secrets/meridian/lab/ssh/username'') }}'
             LAB_PASSWORD: '{{ secret(''vault://orgs/default/secrets/meridian/lab/ssh/password'') }}'
         policy:

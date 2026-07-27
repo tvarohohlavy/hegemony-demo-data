@@ -315,9 +315,15 @@ flows:
               artifact_step_id: check_route
               target_role: audit_targets
               command: "show ip route {{ loop.item }}"
+              # Line scope: the routing entry must exist AND be for the queried
+              # prefix — "% Network not in table" selects zero lines and fails
+              # via min_lines instead of sneaking past a bare presence check.
               operator: contains
-              expected: "Routing entry for"
-              message: "A router has no route for {{ loop.item }}."
+              expected: "{{ loop.item }}"
+              match_scope: lines
+              line_filter: "^Routing entry for "
+              min_lines: 1
+              message: "A router has no routing entry for {{ loop.item }}."
             policy:
               timeout_sec: 60
               retries: 0

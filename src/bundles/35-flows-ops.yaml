@@ -691,9 +691,14 @@ flows:
               artifact_step_id: neighbors
               target_role: health_targets
               command: show ip ospf neighbor
+              # Every neighbor row must be Full (rows start with the Neighbor
+              # ID address); an empty adjacency table must not pass.
               operator: contains
               expected: Full
-              message: OSPF neighbors are not Full on at least one router.
+              match_scope: lines
+              line_filter: '^\s*\d+\.\d+\.\d+\.\d+'
+              min_lines: 1
+              message: OSPF neighbors are not Full (or absent) on at least one router.
             policy:
               timeout_sec: 60
               retries: 0

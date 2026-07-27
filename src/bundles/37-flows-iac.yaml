@@ -61,7 +61,7 @@ flows:
             name: For each server
             type: loop
             loop_mode: for_each
-            items_expr: "inputs.baseline_hosts"
+            items_expr: "targets.baseline_targets | map(attribute='name') | list"
             max_iterations: 16
             collect: "loop.item"
             position_x: 600
@@ -277,7 +277,7 @@ flows:
               env:
                 TF_VAR_service_name: "{{ inputs.service_name }}"
                 TF_VAR_service_prefix: "{{ inputs.service_prefix }}"
-                TF_VAR_routers: "{{ inputs.tf_targets | tojson }}"
+                TF_VAR_routers: "{{ targets.tf_targets | map(attribute='name') | list | tojson }}"
             policy:
               timeout_sec: 300
               retries: 0
@@ -365,7 +365,7 @@ flows:
               env:
                 TF_VAR_service_name: "{{ inputs.service_name }}"
                 TF_VAR_service_prefix: "{{ inputs.service_prefix }}"
-                TF_VAR_routers: "{{ inputs.tf_targets | tojson }}"
+                TF_VAR_routers: "{{ targets.tf_targets | map(attribute='name') | list | tojson }}"
             policy:
               timeout_sec: 300
               retries: 0
@@ -425,8 +425,14 @@ flows:
               artifact_step_id: postcheck
               target_role: tf_targets
               command: show running-config
+              # Line scope: the service description line must exist on every
+              # router AND still carry the managed-by-terraform tag — catching
+              # a hand-edited description, not just a missing one.
               operator: contains
-              expected: "svc {{ inputs.service_name }} managed-by-terraform"
+              expected: managed-by-terraform
+              match_scope: lines
+              line_filter: "description svc {{ inputs.service_name }} "
+              min_lines: 1
               message: A target router does not carry the declared service loopback.
             policy:
               timeout_sec: 60
@@ -689,6 +695,9 @@ flows:
               artifact_step_id: audit
               target_role: drift_targets
               command: show running-config
+              # Deliberately whole-output: the golden marker lives on one
+              # Loopback0 description line, and a line filter cannot express
+              # "under interface Loopback0" — presence is the honest check.
               operator: contains
               expected: managed by Meridian NetOps
               message: At least one router lacks the golden loopback description.
@@ -731,7 +740,7 @@ flows:
               command:
                 - sh /attachments/remediate.sh
               env:
-                LIMIT_HOSTS: "{{ inputs.drift_targets | join(',') }}"
+                LIMIT_HOSTS: "{{ targets.drift_targets | map(attribute='name') | join(',') }}"
                 LAB_USER: "{{ secret('vault://orgs/default/secrets/meridian/lab/ssh/username') }}"
                 LAB_PASSWORD: "{{ secret('vault://orgs/default/secrets/meridian/lab/ssh/password') }}"
             policy:
