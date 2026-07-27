@@ -70,7 +70,9 @@ flows:
       edges: []
 - name: 'Shared: Ansible config audit'
   description: Run an Ansible playbook (localhost, no devices needed) that asserts the organization's golden standards are
-    all defined and writes a PASS/FAIL audit report. Demonstrates an Ansible activity; runnable by every tenant.
+    all defined and writes a PASS/FAIL audit report. A failing audit routes to its own "standards gap" failure terminal (the
+    report artifact records which standard is unset) instead of aborting the run. Demonstrates an Ansible activity; runnable
+    by every tenant.
   definition:
     graph:
       nodes:
@@ -104,14 +106,20 @@ flows:
         policy:
           timeout_sec: 300
           retries: 0
-          on_failure: FAIL_RUN
+          on_failure: CONTINUE
           evidence_required: true
       - id: done
         name: Audit passed
         type: terminal
         terminal_status: success
         position_x: 640
-        position_y: 120
+        position_y: 40
+      - id: gap
+        name: Standards gap found
+        type: terminal
+        terminal_status: failure
+        position_x: 640
+        position_y: 200
       edges:
       - id: e_start_audit
         source: start:start
@@ -119,6 +127,9 @@ flows:
       - id: e_audit_done
         source: audit:success
         target: done
+      - id: e_audit_gap
+        source: audit:failure
+        target: gap
     interface_graph:
       nodes: []
       edges: []

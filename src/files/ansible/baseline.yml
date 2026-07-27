@@ -1,0 +1,54 @@
+# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Server baseline playbook applied host-by-host by the "IaC: Ansible server
+# baseline rollout" flow (one loop iteration = one host via --limit). Ordinary
+# config management: escalate with become, stamp the org's golden standards
+# (resolved by the flow from {{ vars.* }} and passed as environment variables)
+# into /etc, and leave a login banner — all idempotent, so re-runs report ok.
+- name: Meridian server baseline
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    tenant: "{{ lookup('env', 'TENANT_NAME') | default('Meridian', true) }}"
+    ntp: "{{ lookup('env', 'NTP_PRIMARY') | default('', true) }}"
+    dns: "{{ lookup('env', 'DNS_PRIMARY') | default('', true) }}"
+    syslog: "{{ lookup('env', 'SYSLOG_PRIMARY') | default('', true) }}"
+  tasks:
+    - name: Ensure the baseline directory exists
+      ansible.builtin.file:
+        path: /etc/meridian
+        state: directory
+        mode: "0755"
+
+    - name: Render the golden-standards baseline file
+      ansible.builtin.copy:
+        dest: /etc/meridian/baseline.env
+        mode: "0644"
+        content: |
+          # Managed by Hegemony — IaC: Ansible server baseline rollout
+          TENANT={{ tenant }}
+          NTP_PRIMARY={{ ntp }}
+          DNS_PRIMARY={{ dns }}
+          SYSLOG_PRIMARY={{ syslog }}
+
+    - name: Stamp the login banner
+      ansible.builtin.copy:
+        dest: /etc/motd
+        mode: "0644"
+        content: |
+          {{ tenant }} lab server {{ inventory_hostname }} — baseline managed by Ansible.
+          Golden standards: NTP {{ ntp | default('<unset>', true) }} / DNS {{ dns | default('<unset>', true) }} / syslog {{ syslog | default('<unset>', true) }}
+
+    - name: Verify the baseline landed
+      ansible.builtin.command: cat /etc/meridian/baseline.env
+      register: baseline_check
+      changed_when: false
+
+    - name: Assert the baseline records this tenant
+      ansible.builtin.assert:
+        that:
+          - "('TENANT=' + tenant) in baseline_check.stdout"
+        success_msg: "Baseline present on {{ inventory_hostname }}."
+        fail_msg: "Baseline file on {{ inventory_hostname }} does not record tenant {{ tenant }}."

@@ -12,8 +12,10 @@
 #    convergence took. The max_iterations exit is wired to a failure terminal.
 #  * "Net: Per-prefix route audit" is a FOR-EACH loop over a launch-form list
 #    of prefixes: the body runs "show ip route {{ loop.item }}" per prefix
-#    (loop context templating into step params) and counts audited prefixes
-#    in run.vars.
+#    (loop context templating into step params), asserts the route is present,
+#    and counts audited/missing prefixes in run.vars. The loop collects each
+#    audited prefix and a branch after the loop routes on whether any prefix
+#    was missing.
 #
 # Both loops render as container frames in the editor (body nodes are
 # scope_id children wired start → … → end inside the frame), and both keep
@@ -235,10 +237,12 @@ flows:
   - name: "Net: Per-prefix route audit"
     description: >-
       For each prefix chosen on the launch form, run "show ip route <prefix>"
-      on the selected routers and record the output as evidence — one loop
-      iteration (and one StepRun) per prefix, with the audited count kept in
-      run.vars. Demonstrates the for-each loop and loop.item templating in
-      step parameters.
+      on the selected routers, record the output as evidence, and assert the
+      route is actually present — one loop iteration (and one StepRun) per
+      prefix, with audited/missing counts kept in run.vars. The loop collects
+      each audited prefix and a branch after the loop reports success only
+      when nothing was missing. Demonstrates the for-each loop, loop.item
+      templating, collect, and a post-loop verdict branch.
     definition:
       graph:
         nodes:
@@ -248,22 +252,25 @@ flows:
             position_x: 0
             position_y: 200
           - id: sv_zero
-            name: Reset audit counter
+            name: Reset audit counters
             type: set_vars
             position_x: 260
             position_y: 200
             assignments:
               - name: audited
                 expr: "0"
+              - name: missing
+                expr: "0"
           - id: prefix_loop
             name: For each prefix
             type: loop
             loop_mode: for_each
             items_expr: "inputs.check_prefixes"
+            collect: "loop.item"
             position_x: 560
             position_y: 40
-            width: 900
-            height: 340
+            width: 1150
+            height: 380
           - id: check_route
             name: "Route lookup: {{ loop.item }}"
             type: step
@@ -284,28 +291,76 @@ flows:
               retries: 0
               on_failure: CONTINUE
               evidence_required: true
-          - id: sv_count
+          - id: route_ok
+            name: Route present?
+            type: step
+            kind: CHECK
+            phase: VERIFY
+            handler: evidence.assert
+            scope_id: prefix_loop
+            position_x: 380
+            position_y: 90
+            params:
+              artifact_step_id: check_route
+              target_role: audit_targets
+              command: "show ip route {{ loop.item }}"
+              operator: contains
+              expected: "Routing entry for"
+              message: "A router has no route for {{ loop.item }}."
+            policy:
+              timeout_sec: 60
+              retries: 0
+              on_failure: CONTINUE
+              evidence_required: false
+          - id: sv_found
             name: Count audited
             type: set_vars
             scope_id: prefix_loop
-            position_x: 460
-            position_y: 90
+            position_x: 700
+            position_y: 40
             assignments:
               - name: audited
                 expr: "(run.vars.audited | default(0) | int) + 1"
+          - id: sv_gap
+            name: Count missing
+            type: set_vars
+            scope_id: prefix_loop
+            position_x: 700
+            position_y: 220
+            assignments:
+              - name: audited
+                expr: "(run.vars.audited | default(0) | int) + 1"
+              - name: missing
+                expr: "(run.vars.missing | default(0) | int) + 1"
           - id: prefix_loop_end
             name: Loop End
             type: loop_end
             loop_ref: prefix_loop
             scope_id: prefix_loop
-            position_x: 812
-            position_y: 306
+            position_x: 1062
+            position_y: 346
+          - id: audit_verdict
+            name: Any prefix missing?
+            type: branch
+            branch_mode: rules
+            position_x: 1860
+            position_y: 200
+            cases:
+              - id: c_clean
+                label: All prefixes present
+                when: "(run.vars.missing | default(0) | int) == 0"
           - id: audit_done
-            name: Audit complete
+            name: All prefixes present
             type: terminal
             terminal_status: success
-            position_x: 1580
-            position_y: 200
+            position_x: 2180
+            position_y: 120
+          - id: audit_gaps
+            name: Prefixes missing
+            type: terminal
+            terminal_status: failure
+            position_x: 2180
+            position_y: 300
         edges:
           - id: e_start_zero
             source: start:start
@@ -316,18 +371,34 @@ flows:
           - id: e_loop_check
             source: prefix_loop:iterate
             target: check_route
-          - id: e_check_count
+          - id: e_check_assert
             source: check_route:success
-            target: sv_count
-          - id: e_check_count_failed
+            target: route_ok
+          # An unreachable router counts as a gap and the audit continues.
+          - id: e_check_gap
             source: check_route:failure
-            target: sv_count
-          - id: e_count_end
-            source: sv_count:success
+            target: sv_gap
+          - id: e_assert_found
+            source: route_ok:success
+            target: sv_found
+          - id: e_assert_gap
+            source: route_ok:failure
+            target: sv_gap
+          - id: e_found_end
+            source: sv_found:success
             target: prefix_loop_end
-          - id: e_loop_done
+          - id: e_gap_end
+            source: sv_gap:success
+            target: prefix_loop_end
+          - id: e_loop_verdict
             source: prefix_loop:done
+            target: audit_verdict
+          - id: e_verdict_clean
+            source: "audit_verdict:case:c_clean"
             target: audit_done
+          - id: e_verdict_gaps
+            source: audit_verdict:else
+            target: audit_gaps
       interface_graph:
         nodes:
           - id: sec_targets
