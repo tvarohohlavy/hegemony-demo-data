@@ -1675,6 +1675,377 @@ flows:
               - value: 10.255.255.9
                 label: dc2-core-01 loopback (backbone)
       edges: []
+- name: 'Net: Wait for OSPF convergence'
+  description: 'Retry-until-healthy: collect OSPF neighbor state from the selected routers in a loop until every adjacency
+    is Full (or give up after 6 attempts). Run-scoped variables track the attempt count and verdict; a branch after the loop
+    reports whether the fabric was converged on the first check or needed retries.'
+  definition:
+    graph:
+      nodes:
+      - id: start
+        name: Start
+        type: start
+        position_x: 0
+        position_y: 260
+      - id: sv_init
+        name: Init counters
+        type: set_vars
+        position_x: 260
+        position_y: 260
+        assignments:
+        - name: attempts
+          expr: '0'
+        - name: converged
+          expr: 'false'
+      - id: conv_loop
+        name: Until converged
+        type: loop
+        loop_mode: until
+        condition: run.vars.converged | default(false)
+        max_iterations: 6
+        position_x: 560
+        position_y: 60
+        width: 1060
+        height: 420
+      - id: collect_state
+        name: Collect OSPF neighbors
+        type: step
+        kind: CHECK
+        phase: VERIFY
+        handler: netcli.collect_evidence
+        scope_id: conv_loop
+        position_x: 60
+        position_y: 90
+        target_selectors:
+        - type: role
+          role: converge_targets
+        params:
+          commands:
+          - show ip ospf neighbor
+        policy:
+          timeout_sec: 120
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: true
+      - id: assert_full
+        name: All adjacencies Full?
+        type: step
+        kind: CHECK
+        phase: VERIFY
+        handler: evidence.assert
+        scope_id: conv_loop
+        position_x: 380
+        position_y: 90
+        params:
+          artifact_step_id: collect_state
+          target_role: converge_targets
+          command: show ip ospf neighbor
+          operator: contains
+          expected: Full
+          message: At least one router still has a non-Full OSPF neighbor.
+        policy:
+          timeout_sec: 60
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: false
+      - id: sv_ok
+        name: Mark converged
+        type: set_vars
+        scope_id: conv_loop
+        position_x: 700
+        position_y: 60
+        assignments:
+        - name: attempts
+          expr: (run.vars.attempts | default(0) | int) + 1
+        - name: converged
+          expr: 'true'
+      - id: sv_retry
+        name: Mark not converged
+        type: set_vars
+        scope_id: conv_loop
+        position_x: 700
+        position_y: 220
+        assignments:
+        - name: attempts
+          expr: (run.vars.attempts | default(0) | int) + 1
+        - name: converged
+          expr: 'false'
+      - id: conv_loop_end
+        name: Loop End
+        type: loop_end
+        loop_ref: conv_loop
+        scope_id: conv_loop
+        position_x: 972
+        position_y: 386
+      - id: verdict
+        name: How fast did we converge?
+        type: branch
+        branch_mode: rules
+        position_x: 1740
+        position_y: 180
+        cases:
+        - id: c_first
+          label: Converged on first check
+          when: run.vars.attempts | int <= 1
+      - id: done_first
+        name: Healthy (first check)
+        type: terminal
+        terminal_status: success
+        position_x: 2060
+        position_y: 100
+      - id: done_retry
+        name: Converged after retries
+        type: terminal
+        terminal_status: success
+        position_x: 2060
+        position_y: 260
+      - id: not_converged
+        name: Did not converge
+        type: terminal
+        terminal_status: failure
+        position_x: 1740
+        position_y: 420
+      edges:
+      - id: e_start_init
+        source: start:start
+        target: sv_init
+      - id: e_init_loop
+        source: sv_init:success
+        target: conv_loop
+      - id: e_loop_collect
+        source: conv_loop:iterate
+        target: collect_state
+      - id: e_collect_assert
+        source: collect_state:success
+        target: assert_full
+      - id: e_collect_retry
+        source: collect_state:failure
+        target: sv_retry
+      - id: e_assert_ok
+        source: assert_full:success
+        target: sv_ok
+      - id: e_assert_retry
+        source: assert_full:failure
+        target: sv_retry
+      - id: e_ok_end
+        source: sv_ok:success
+        target: conv_loop_end
+      - id: e_retry_end
+        source: sv_retry:success
+        target: conv_loop_end
+      - id: e_loop_verdict
+        source: conv_loop:done
+        target: verdict
+      - id: e_loop_giveup
+        source: conv_loop:max_iterations
+        target: not_converged
+      - id: e_verdict_first
+        source: verdict:case:c_first
+        target: done_first
+      - id: e_verdict_retry
+        source: verdict:else
+        target: done_retry
+    interface_graph:
+      nodes:
+      - id: sec_targets
+        kind: section
+        position_x: 80
+        position_y: 80
+        width: 480
+        height: 180
+        data:
+          label: Target routers
+          runtime_layout: card
+          collapsible: false
+      - id: f_targets
+        kind: field
+        parent_id: sec_targets
+        position_x: 40
+        position_y: 60
+        data:
+          label: Routers
+          field_id: targets
+          field_type: inventory.device
+          required: true
+          description: Routers whose OSPF adjacencies must all be Full — the core fabric, preselected.
+          default_value:
+          - dc1-core-01
+          - dc1-core-02
+          - dc2-core-01
+          - dc2-core-02
+          config:
+            role: converge_targets
+            multiple: true
+            option_source:
+              kind: inventory.devices
+      edges: []
+- name: 'Net: Per-prefix route audit'
+  description: For each prefix chosen on the launch form, run "show ip route <prefix>" on the selected routers and record
+    the output as evidence — one loop iteration (and one StepRun) per prefix, with the audited count kept in run.vars. Demonstrates
+    the for-each loop and loop.item templating in step parameters.
+  definition:
+    graph:
+      nodes:
+      - id: start
+        name: Start
+        type: start
+        position_x: 0
+        position_y: 200
+      - id: sv_zero
+        name: Reset audit counter
+        type: set_vars
+        position_x: 260
+        position_y: 200
+        assignments:
+        - name: audited
+          expr: '0'
+      - id: prefix_loop
+        name: For each prefix
+        type: loop
+        loop_mode: for_each
+        items_expr: inputs.check_prefixes
+        position_x: 560
+        position_y: 40
+        width: 900
+        height: 340
+      - id: check_route
+        name: 'Route lookup: {{ loop.item }}'
+        type: step
+        kind: CHECK
+        phase: VERIFY
+        handler: netcli.collect_evidence
+        scope_id: prefix_loop
+        position_x: 80
+        position_y: 90
+        target_selectors:
+        - type: role
+          role: audit_targets
+        params:
+          commands:
+          - show ip route {{ loop.item }}
+        policy:
+          timeout_sec: 120
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: true
+      - id: sv_count
+        name: Count audited
+        type: set_vars
+        scope_id: prefix_loop
+        position_x: 460
+        position_y: 90
+        assignments:
+        - name: audited
+          expr: (run.vars.audited | default(0) | int) + 1
+      - id: prefix_loop_end
+        name: Loop End
+        type: loop_end
+        loop_ref: prefix_loop
+        scope_id: prefix_loop
+        position_x: 812
+        position_y: 306
+      - id: audit_done
+        name: Audit complete
+        type: terminal
+        terminal_status: success
+        position_x: 1580
+        position_y: 200
+      edges:
+      - id: e_start_zero
+        source: start:start
+        target: sv_zero
+      - id: e_zero_loop
+        source: sv_zero:success
+        target: prefix_loop
+      - id: e_loop_check
+        source: prefix_loop:iterate
+        target: check_route
+      - id: e_check_count
+        source: check_route:success
+        target: sv_count
+      - id: e_check_count_failed
+        source: check_route:failure
+        target: sv_count
+      - id: e_count_end
+        source: sv_count:success
+        target: prefix_loop_end
+      - id: e_loop_done
+        source: prefix_loop:done
+        target: audit_done
+    interface_graph:
+      nodes:
+      - id: sec_targets
+        kind: section
+        position_x: 80
+        position_y: 80
+        width: 480
+        height: 180
+        data:
+          label: Target routers
+          runtime_layout: card
+          collapsible: false
+      - id: f_targets
+        kind: field
+        parent_id: sec_targets
+        position_x: 40
+        position_y: 60
+        data:
+          label: Routers
+          field_id: targets
+          field_type: inventory.device
+          required: true
+          description: Routers to audit the prefixes on — core routers preselected.
+          default_value:
+          - dc1-core-01
+          - dc2-core-01
+          config:
+            role: audit_targets
+            multiple: true
+            option_source:
+              kind: inventory.devices
+      - id: sec_prefixes
+        kind: section
+        position_x: 620
+        position_y: 80
+        width: 520
+        height: 220
+        data:
+          label: Prefixes
+          runtime_layout: card
+          collapsible: false
+      - id: f_prefixes
+        kind: field
+        parent_id: sec_prefixes
+        position_x: 40
+        position_y: 60
+        data:
+          label: Prefixes to audit
+          field_id: check_prefixes
+          field_type: core.multi_enum
+          required: true
+          default_value:
+          - 10.101.1.0/24
+          - 10.104.1.0/24
+          - 10.255.255.1/32
+          description: One loop iteration audits each selected prefix.
+          config:
+            multiple: true
+            option_source:
+              kind: core.static
+              static_options:
+              - value: 10.101.1.0/24
+                label: Lab DC1 endpoint LAN
+              - value: 10.104.1.0/24
+                label: Lab DC2 endpoint LAN
+              - value: 10.102.1.0/24
+                label: Lab Branch 1 endpoint LAN
+              - value: 10.103.1.0/24
+                label: Lab Branch 2 endpoint LAN
+              - value: 10.255.255.1/32
+                label: dc1-core-01 loopback
+              - value: 10.255.255.9/32
+                label: dc2-core-01 loopback
+      edges: []
 flow_attachments:
 - flow: 'Lab: Provision and tear down demo datacenter'
   filename: Dockerfile

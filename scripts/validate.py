@@ -20,8 +20,11 @@ import yaml
 from build import ROOT, BundleConfig, load_manifest, merge_fragments
 
 SECRET_CALL_RE = re.compile(r"secret\(\s*['\"]([^'\"]+)['\"]\s*\)")
+# Bundle-variable references ({{ vars.NAME }}). The lookbehind keeps
+# run-scoped variables (run.vars.NAME — per-run mutable state written by
+# set_vars nodes, not bundled variables) from matching.
 VARS_REF_RE = re.compile(
-    r"vars(?:\[['\"]([^'\"]+)['\"]\]|\.([A-Za-z_][A-Za-z0-9_]*))"
+    r"(?<![.\w])vars(?:\[['\"]([^'\"]+)['\"]\]|\.([A-Za-z_][A-Za-z0-9_]*))"
 )
 TEMPLATE_REF_RE = re.compile(r"{{\s*(env|file|secret)\s*\(")
 
@@ -318,7 +321,9 @@ class Validator:
         for location, key, value in self._walk_mapping_values(self.bundle):
             if not isinstance(value, str) or not value.strip():
                 continue
-            if key.endswith("_ref") and not TEMPLATE_REF_RE.search(value):
+            # loop_ref is a graph-node reference (a loop_end naming its loop
+            # head), not a secret/env reference.
+            if key.endswith("_ref") and key != "loop_ref" and not TEMPLATE_REF_RE.search(value):
                 self.error(f"{location} should use env(), file(), or secret() template syntax")
             if key == "url_secret" and not TEMPLATE_REF_RE.search(value):
                 self.error(f"{location} should use env(), file(), or secret() template syntax")

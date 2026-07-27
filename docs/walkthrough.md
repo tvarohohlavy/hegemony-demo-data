@@ -97,7 +97,14 @@ against). They become *reachable* only once the lab is stood up.
    events, and the container steps executing.
 3. When the lab is up, run **"Net: Lab routing health check"** — the run form
    opens with **all eleven lab routers already selected** as targets. It probes
-   reachability and asserts OSPF neighbors are Full.
+   reachability and asserts OSPF neighbors are Full. Then try the two
+   **control-flow** flows built on the same routers: **"Net: Wait for OSPF
+   convergence"** re-collects neighbor state in an **until-loop** (watch the
+   loop container iterate on the Run graph, the attempt counter under **Run
+   Variables**, and the **branch** route on first-check vs. after-retries),
+   and **"Net: Per-prefix route audit"** runs a **for-each loop** over the
+   prefixes you pick on the launch form — one iteration and one evidence
+   StepRun per prefix via `{{ loop.item }}`.
 4. Run **"Ops: Announce service prefix"** — the **core routers are preselected**,
    and the loopback / service-address / change-reference fields are **prefilled
    with defaults** (leave them as-is to accept the defaults, or override). It
