@@ -3351,7 +3351,13 @@ flow_attachments:
 
     ansible_connection=ssh
 
-    ansible_ssh_common_args=-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    # accept-new pins each host key on first contact and rejects a mid-run change.
+
+    # The known-hosts file lives in the throwaway rollout container''s /tmp, so it
+
+    # is fresh every run — regenerated lab host keys never conflict across deploys.
+
+    ansible_ssh_common_args=-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/lab-known-hosts
 
     '
 - flow: 'IaC: Ansible server baseline rollout'
@@ -3562,7 +3568,15 @@ flow_attachments:
 
     ansible_connection=ssh
 
-    ansible_ssh_common_args=-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    # accept-new pins each host key on first contact and rejects a mid-run change.
+
+    # The known-hosts file lives in the throwaway remediation container''s /tmp, so
+
+    # it is fresh every run — regenerated lab host keys never conflict across
+
+    # deploys.
+
+    ansible_ssh_common_args=-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/lab-known-hosts
 
     '
 - flow: 'IaC: Ansible router drift remediation'
