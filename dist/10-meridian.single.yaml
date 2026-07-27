@@ -3568,8 +3568,9 @@ flow_attachments:
     \ carries the golden loopback description.\n- name: Meridian router golden-config remediation\n  hosts: all\n  gather_facts:\
     \ false\n  tasks:\n    - name: Stamp the golden loopback description\n      ansible.builtin.raw: |\n        configure\
     \ terminal\n        interface lo\n        description managed by Meridian NetOps\n        end\n      changed_when: true\n\
-    \n    - name: Read back the loopback config\n      ansible.builtin.raw: |\n        show running-config interface lo\n\
-    \      register: lo_config\n      changed_when: false\n\n    - name: Assert the description is present\n      ansible.builtin.assert:\n\
+    \n    - name: Read back the running config\n      # This FRR build has no per-interface running-config filter — read the\n\
+    \      # whole config and assert on the marker line.\n      ansible.builtin.raw: |\n        show running-config\n    \
+    \  register: lo_config\n      changed_when: false\n\n    - name: Assert the description is present\n      ansible.builtin.assert:\n\
     \        that:\n          - \"'managed by Meridian NetOps' in lo_config.stdout\"\n        success_msg: \"{{ inventory_hostname\
     \ }} carries the golden description.\"\n        fail_msg: \"{{ inventory_hostname }} still lacks the golden description.\"\
     \n"
