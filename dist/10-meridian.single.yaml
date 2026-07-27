@@ -2171,6 +2171,7 @@ flows:
         params:
           image: alpine:3.22
           working_dir: /workspace
+          network_mode: host
           timeout_seconds: 300
           command:
           - sh /attachments/rolling.sh
@@ -2782,6 +2783,7 @@ flows:
         params:
           image: alpine:3.22
           working_dir: /workspace
+          network_mode: host
           timeout_seconds: 300
           command:
           - sh /attachments/remediate.sh

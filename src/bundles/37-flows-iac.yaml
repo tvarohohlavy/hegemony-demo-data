@@ -93,6 +93,9 @@ flows:
             params:
               image: alpine:3.22
               working_dir: /workspace
+              # Host networking so the container reaches the lab management
+              # network (172.20.30.0/24) like the other lab-facing containers.
+              network_mode: host
               timeout_seconds: 300
               command:
                 - sh /attachments/rolling.sh
@@ -721,6 +724,9 @@ flows:
             params:
               image: alpine:3.22
               working_dir: /workspace
+              # Host networking so the container reaches the lab management
+              # network (172.20.30.0/24) like the other lab-facing containers.
+              network_mode: host
               timeout_seconds: 300
               command:
                 - sh /attachments/remediate.sh
