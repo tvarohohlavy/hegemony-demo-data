@@ -761,6 +761,9 @@ flows:
       - id: e_converge_hold
         source: converge_check:success
         target: hold
+      - id: e_converge_hold_fail
+        source: converge_check:failure
+        target: hold
       - id: e_join_failed
         source: join:join_failed
         target: failed
@@ -2988,7 +2991,7 @@ flow_attachments:
     ARG LAB_PASSWORD=demo-lab-password\n\nRUN apk add --no-cache openssh iproute2 iputils libcap-utils python3 sudo \\\n \
     \   && ssh-keygen -A \\\n    && sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config\
     \ \\\n    && sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config \\\n    && adduser -D -s /bin/sh\
-    \ clab \\\n    && echo \"clab:${LAB_PASSWORD}\" | chpasswd \\\n    && echo \"clab ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/clab\
+    \ clab \\\n    && echo \"clab:${LAB_PASSWORD}\" | chpasswd \\\n    && echo \"clab ALL=(ALL) ALL\" > /etc/sudoers.d/clab\
     \ \\\n    && chmod 0440 /etc/sudoers.d/clab \\\n    && setcap cap_net_raw+ep \"$(command -v ping)\"\n\nCOPY entrypoint.sh\
     \ /usr/local/bin/host-entrypoint.sh\nRUN chmod +x /usr/local/bin/host-entrypoint.sh\n\nENTRYPOINT [\"/usr/local/bin/host-entrypoint.sh\"\
     ]\n"
@@ -3488,7 +3491,7 @@ flow_attachments:
   content: "#!/bin/sh\n# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier:\
     \ AGPL-3.0-or-later\n#\n# Post-apply convergence check: terraform plan -detailed-exitcode against the\n# state apply just\
     \ wrote. Exit 0 = state matches the desired config (the step\n# succeeds); exit 2 = drift remains (surfaced as a step\
-    \ failure so the flow\n# routes to its drift terminal); exit 1 = plan error.\nset -eu\n\nWORKDIR=/shared/tf\ncd \"${WORKDIR}\"\
+    \ failure, routing the\n# flow to its failure terminal); exit 1 = plan error.\nset -eu\n\nWORKDIR=/shared/tf\ncd \"${WORKDIR}\"\
     \nmkdir -p /artifacts/new\n\nrc=0\nterraform plan -input=false -no-color -detailed-exitcode \\\n  >/artifacts/new/terraform-verify.txt\
     \ 2>&1 || rc=$?\ncat /artifacts/new/terraform-verify.txt\n\ncase \"${rc}\" in\n  0) echo \"Converged: state matches the\
     \ desired configuration.\" ;;\n  2) echo \"Drift detected: the state does not match the desired configuration.\" >&2 ;;\n\

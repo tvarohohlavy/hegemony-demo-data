@@ -26,7 +26,7 @@ RUN apk add --no-cache openssh iproute2 iputils libcap-utils python3 sudo \
     && sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config \
     && adduser -D -s /bin/sh clab \
     && echo "clab:${LAB_PASSWORD}" | chpasswd \
-    && echo "clab ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/clab \
+    && echo "clab ALL=(ALL) ALL" > /etc/sudoers.d/clab \
     && chmod 0440 /etc/sudoers.d/clab \
     && setcap cap_net_raw+ep "$(command -v ping)"
 

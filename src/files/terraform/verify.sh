@@ -4,8 +4,8 @@
 #
 # Post-apply convergence check: terraform plan -detailed-exitcode against the
 # state apply just wrote. Exit 0 = state matches the desired config (the step
-# succeeds); exit 2 = drift remains (surfaced as a step failure so the flow
-# routes to its drift terminal); exit 1 = plan error.
+# succeeds); exit 2 = drift remains (surfaced as a step failure, routing the
+# flow to its failure terminal); exit 1 = plan error.
 set -eu
 
 WORKDIR=/shared/tf

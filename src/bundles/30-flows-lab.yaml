@@ -417,6 +417,11 @@ flows:
           - id: e_converge_hold
             source: converge_check:success
             target: hold
+          - id: e_converge_hold_fail
+            # A failed subflow launch must not strand the run before the
+            # teardown gate — both outcomes proceed to the approval.
+            source: converge_check:failure
+            target: hold
           - id: e_join_failed
             source: join:join_failed
             target: failed
