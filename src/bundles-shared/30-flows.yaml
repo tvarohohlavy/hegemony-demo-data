@@ -29,15 +29,15 @@ flows:
             name: Start
             type: start
             position_x: 0
-            position_y: 120
+            position_y: 140
           - id: render
             name: Render standards report
             type: step
             kind: EXECUTE
             phase: IMPLEMENTATION
             handler: container.run
-            position_x: 320
-            position_y: 120
+            position_x: 240
+            position_y: 140
             mounted_files:
               - report.sh
             params:
@@ -66,8 +66,8 @@ flows:
             name: Report generated
             type: terminal
             terminal_status: success
-            position_x: 640
-            position_y: 120
+            position_x: 660
+            position_y: 150
         edges:
           - id: e_start_render
             source: start:start
@@ -95,15 +95,15 @@ flows:
             name: Start
             type: start
             position_x: 0
-            position_y: 120
+            position_y: 140
           - id: audit
             name: ansible-playbook audit
             type: step
             kind: EXECUTE
             phase: VERIFY
             handler: container.run
-            position_x: 320
-            position_y: 120
+            position_x: 240
+            position_y: 140
             mounted_files:
               - audit.yml
               - run.sh
@@ -127,14 +127,14 @@ flows:
             name: Audit passed
             type: terminal
             terminal_status: success
-            position_x: 640
-            position_y: 40
+            position_x: 660
+            position_y: 80
           - id: gap
             name: Standards gap found
             type: terminal
             terminal_status: failure
-            position_x: 640
-            position_y: 200
+            position_x: 660
+            position_y: 240
         edges:
           - id: e_start_audit
             source: start:start
@@ -162,15 +162,15 @@ flows:
             name: Start
             type: start
             position_x: 0
-            position_y: 120
+            position_y: 140
           - id: plan
             name: terraform init + plan
             type: step
             kind: EXECUTE
             phase: PREPARE
             handler: container.run
-            position_x: 320
-            position_y: 120
+            position_x: 240
+            position_y: 140
             mounted_files:
               - main.tf
               - run.sh
@@ -197,8 +197,8 @@ flows:
             name: Plan generated
             type: terminal
             terminal_status: success
-            position_x: 640
-            position_y: 120
+            position_x: 660
+            position_y: 150
         edges:
           - id: e_start_plan
             source: start:start

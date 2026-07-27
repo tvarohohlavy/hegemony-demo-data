@@ -32,15 +32,15 @@ flows:
             name: Start
             type: start
             position_x: 0
-            position_y: 200
+            position_y: 280
           - id: build_image
             name: Build lab images
             type: step
             kind: EXECUTE
             phase: PREPARE
             handler: container.run
-            position_x: 320
-            position_y: 200
+            position_x: 240
+            position_y: 280
             mounted_files:
               - Dockerfile
               - entrypoint.sh
@@ -75,16 +75,16 @@ flows:
           - id: fork
             name: Deploy lab and Gitea
             type: fork
-            position_x: 620
-            position_y: 200
+            position_x: 660
+            position_y: 300
           - id: deploy_lab
             name: Deploy containerlab multi-area lab
             type: step
             kind: EXECUTE
             phase: IMPLEMENTATION
             handler: container.run
-            position_x: 920
-            position_y: 40
+            position_x: 860
+            position_y: 60
             mounted_files:
               - topology.clab.yml
               - frr/
@@ -126,8 +126,8 @@ flows:
             kind: ACTION
             phase: IMPLEMENTATION
             handler: container.run
-            position_x: 1220
-            position_y: 40
+            position_x: 1280
+            position_y: 60
             params:
               image: ghcr.io/srl-labs/clab:0.77.0
               working_dir: /workspace
@@ -155,8 +155,8 @@ flows:
             kind: CHECK
             phase: VERIFY
             handler: container.run
-            position_x: 1520
-            position_y: 40
+            position_x: 1700
+            position_y: 60
             params:
               image: ghcr.io/srl-labs/clab:0.77.0
               working_dir: /workspace
@@ -210,8 +210,8 @@ flows:
             kind: EXECUTE
             phase: IMPLEMENTATION
             handler: container.run
-            position_x: 920
-            position_y: 360
+            position_x: 860
+            position_y: 500
             mounted_files:
               - seed.sh
             params:
@@ -254,14 +254,14 @@ flows:
             join_mode: all
             failure_policy: propagate
             cancel_policy: wait
-            position_x: 1820
-            position_y: 200
+            position_x: 2160
+            position_y: 300
           - id: hold
             name: Interact, then approve to tear down
             type: approval
             phase: IMPLEMENTATION
-            position_x: 2120
-            position_y: 200
+            position_x: 2320
+            position_y: 290
             params:
               title: "Demo datacenter is up — approve to tear it down"
               message: >-
@@ -278,7 +278,7 @@ flows:
             kind: EXECUTE
             phase: CLEANUP
             handler: container.run
-            position_x: 2420
+            position_x: 2780
             position_y: 120
             mounted_files:
               - topology.clab.yml
@@ -335,20 +335,20 @@ flows:
             name: Lab torn down
             type: terminal
             terminal_status: success
-            position_x: 2720
-            position_y: 40
+            position_x: 3200
+            position_y: 60
           - id: left_running
             name: Lab left running
             type: terminal
             terminal_status: success
-            position_x: 2720
-            position_y: 260
+            position_x: 3200
+            position_y: 320
           - id: failed
             name: Lifecycle failed
             type: terminal
             terminal_status: failure
-            position_x: 2420
-            position_y: 400
+            position_x: 2780
+            position_y: 560
         edges:
           - id: e_start_build
             source: start:start

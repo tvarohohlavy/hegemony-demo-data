@@ -470,15 +470,15 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 200
+        position_y: 280
       - id: build_image
         name: Build lab images
         type: step
         kind: EXECUTE
         phase: PREPARE
         handler: container.run
-        position_x: 320
-        position_y: 200
+        position_x: 240
+        position_y: 280
         mounted_files:
         - Dockerfile
         - entrypoint.sh
@@ -504,16 +504,16 @@ flows:
       - id: fork
         name: Deploy lab and Gitea
         type: fork
-        position_x: 620
-        position_y: 200
+        position_x: 660
+        position_y: 300
       - id: deploy_lab
         name: Deploy containerlab multi-area lab
         type: step
         kind: EXECUTE
         phase: IMPLEMENTATION
         handler: container.run
-        position_x: 920
-        position_y: 40
+        position_x: 860
+        position_y: 60
         mounted_files:
         - topology.clab.yml
         - frr/
@@ -546,8 +546,8 @@ flows:
         kind: ACTION
         phase: IMPLEMENTATION
         handler: container.run
-        position_x: 1220
-        position_y: 40
+        position_x: 1280
+        position_y: 60
         params:
           image: ghcr.io/srl-labs/clab:0.77.0
           working_dir: /workspace
@@ -567,8 +567,8 @@ flows:
         kind: CHECK
         phase: VERIFY
         handler: container.run
-        position_x: 1520
-        position_y: 40
+        position_x: 1700
+        position_y: 60
         params:
           image: ghcr.io/srl-labs/clab:0.77.0
           working_dir: /workspace
@@ -597,8 +597,8 @@ flows:
         kind: EXECUTE
         phase: IMPLEMENTATION
         handler: container.run
-        position_x: 920
-        position_y: 360
+        position_x: 860
+        position_y: 500
         mounted_files:
         - seed.sh
         params:
@@ -625,14 +625,14 @@ flows:
         join_mode: all
         failure_policy: propagate
         cancel_policy: wait
-        position_x: 1820
-        position_y: 200
+        position_x: 2160
+        position_y: 300
       - id: hold
         name: Interact, then approve to tear down
         type: approval
         phase: IMPLEMENTATION
-        position_x: 2120
-        position_y: 200
+        position_x: 2320
+        position_y: 290
         params:
           title: Demo datacenter is up — approve to tear it down
           message: 'The lab is running: 11 routers and 4 Linux endpoint hosts in 172.20.30.0/24 (dc1 .11-.15, br1 .21-.23,
@@ -645,7 +645,7 @@ flows:
         kind: EXECUTE
         phase: CLEANUP
         handler: container.run
-        position_x: 2420
+        position_x: 2780
         position_y: 120
         mounted_files:
         - topology.clab.yml
@@ -683,20 +683,20 @@ flows:
         name: Lab torn down
         type: terminal
         terminal_status: success
-        position_x: 2720
-        position_y: 40
+        position_x: 3200
+        position_y: 60
       - id: left_running
         name: Lab left running
         type: terminal
         terminal_status: success
-        position_x: 2720
-        position_y: 260
+        position_x: 3200
+        position_y: 320
       - id: failed
         name: Lifecycle failed
         type: terminal
         terminal_status: failure
-        position_x: 2420
-        position_y: 400
+        position_x: 2780
+        position_y: 560
       edges:
       - id: e_start_build
         source: start:start
@@ -812,15 +812,15 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 120
+        position_y: 140
       - id: collect_configs
         name: Collect running configs
         type: step
         kind: CHECK
         phase: PREPARE
         handler: netcli.collect_evidence
-        position_x: 320
-        position_y: 120
+        position_x: 240
+        position_y: 140
         target_selectors:
         - type: role
           role: backup_targets
@@ -838,8 +838,8 @@ flows:
         kind: EXECUTE
         phase: IMPLEMENTATION
         handler: container.run
-        position_x: 640
-        position_y: 120
+        position_x: 660
+        position_y: 140
         params:
           image: alpine/git:v2.45.2
           entrypoint: /bin/sh
@@ -875,14 +875,14 @@ flows:
         name: Backup complete
         type: terminal
         terminal_status: success
-        position_x: 960
-        position_y: 40
+        position_x: 1080
+        position_y: 60
       - id: failed
         name: Backup failed
         type: terminal
         terminal_status: failure
-        position_x: 960
-        position_y: 240
+        position_x: 1080
+        position_y: 260
       edges:
       - id: e_start_collect
         source: start:start
@@ -1003,13 +1003,13 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 200
+        position_y: 220
       - id: approval
         name: Approve announcement
         type: approval
         phase: IMPLEMENTATION
-        position_x: 300
-        position_y: 200
+        position_x: 240
+        position_y: 210
         params:
           title: Approve service prefix announcement
           message: Advertise the requested service prefix on the selected routers? The prefix, OSPF settings and change ID
@@ -1026,7 +1026,7 @@ flows:
         kind: CHECK
         phase: PREPARE
         handler: netcli.collect_evidence
-        position_x: 600
+        position_x: 700
         position_y: 120
         target_selectors:
         - type: role
@@ -1047,7 +1047,7 @@ flows:
         kind: ACTION
         phase: IMPLEMENTATION
         handler: netcli.execute
-        position_x: 900
+        position_x: 1120
         position_y: 120
         target_selectors:
         - type: role
@@ -1071,7 +1071,7 @@ flows:
         kind: CHECK
         phase: VERIFY
         handler: netcli.collect_evidence
-        position_x: 1200
+        position_x: 1540
         position_y: 120
         target_selectors:
         - type: role
@@ -1092,7 +1092,7 @@ flows:
         kind: CHECK
         phase: VERIFY
         handler: evidence.compare
-        position_x: 1500
+        position_x: 1960
         position_y: 120
         params:
           precheck_step_id: precheck
@@ -1108,14 +1108,14 @@ flows:
         name: Announcement complete
         type: terminal
         terminal_status: success
-        position_x: 1800
-        position_y: 40
+        position_x: 2380
+        position_y: 100
       - id: failed
         name: Announcement failed
         type: terminal
         terminal_status: failure
-        position_x: 1800
-        position_y: 360
+        position_x: 1400
+        position_y: 440
       edges:
       - id: e_start_approval
         source: start:start
@@ -1348,15 +1348,15 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 120
+        position_y: 140
       - id: reachable
         name: Reachability probe (TCP/22)
         type: step
         kind: CHECK
         phase: PREPARE
         handler: probe.connectivity
-        position_x: 300
-        position_y: 120
+        position_x: 240
+        position_y: 140
         target_selectors:
         - type: role
           role: health_targets
@@ -1376,8 +1376,8 @@ flows:
         kind: CHECK
         phase: VERIFY
         handler: netcli.collect_evidence
-        position_x: 600
-        position_y: 120
+        position_x: 660
+        position_y: 140
         target_selectors:
         - type: role
           role: health_targets
@@ -1396,8 +1396,8 @@ flows:
         kind: CHECK
         phase: VERIFY
         handler: evidence.assert
-        position_x: 900
-        position_y: 120
+        position_x: 1080
+        position_y: 140
         params:
           artifact_step_id: neighbors
           target_role: health_targets
@@ -1414,14 +1414,14 @@ flows:
         name: Healthy
         type: terminal
         terminal_status: success
-        position_x: 1200
-        position_y: 40
+        position_x: 1500
+        position_y: 60
       - id: failed
         name: Unhealthy
         type: terminal
         terminal_status: failure
-        position_x: 1200
-        position_y: 240
+        position_x: 1500
+        position_y: 280
       edges:
       - id: e_start_reachable
         source: start:start
@@ -1496,15 +1496,15 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 120
+        position_y: 140
       - id: reachable
         name: Reachability probe (TCP/22)
         type: step
         kind: CHECK
         phase: PREPARE
         handler: probe.connectivity
-        position_x: 300
-        position_y: 120
+        position_x: 240
+        position_y: 140
         target_selectors:
         - type: role
           role: probe_sources
@@ -1524,8 +1524,8 @@ flows:
         kind: ACTION
         phase: PREPARE
         handler: shell.execute
-        position_x: 600
-        position_y: 120
+        position_x: 660
+        position_y: 140
         target_selectors:
         - type: role
           role: probe_sources
@@ -1548,8 +1548,8 @@ flows:
         kind: ACTION
         phase: VERIFY
         handler: shell.execute
-        position_x: 900
-        position_y: 120
+        position_x: 1080
+        position_y: 140
         target_selectors:
         - type: role
           role: probe_sources
@@ -1569,14 +1569,14 @@ flows:
         name: All destinations reachable
         type: terminal
         terminal_status: success
-        position_x: 1200
-        position_y: 40
+        position_x: 1500
+        position_y: 60
       - id: failed
         name: Reachability failed
         type: terminal
         terminal_status: failure
-        position_x: 1200
-        position_y: 240
+        position_x: 1500
+        position_y: 280
       edges:
       - id: e_start_reachable
         source: start:start
@@ -1686,12 +1686,12 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 260
+        position_y: 300
       - id: sv_init
         name: Init counters
         type: set_vars
-        position_x: 260
-        position_y: 260
+        position_x: 200
+        position_y: 300
         assignments:
         - name: attempts
           expr: '0'
@@ -1703,10 +1703,10 @@ flows:
         loop_mode: until
         condition: run.vars.converged | default(false)
         max_iterations: 6
-        position_x: 560
-        position_y: 60
-        width: 1060
-        height: 420
+        position_x: 620
+        position_y: 80
+        width: 1260
+        height: 460
       - id: collect_state
         name: Collect OSPF neighbors
         type: step
@@ -1715,7 +1715,7 @@ flows:
         handler: netcli.collect_evidence
         scope_id: conv_loop
         position_x: 60
-        position_y: 90
+        position_y: 100
         target_selectors:
         - type: role
           role: converge_targets
@@ -1734,8 +1734,8 @@ flows:
         phase: VERIFY
         handler: evidence.assert
         scope_id: conv_loop
-        position_x: 380
-        position_y: 90
+        position_x: 440
+        position_y: 100
         params:
           artifact_step_id: collect_state
           target_role: converge_targets
@@ -1752,7 +1752,7 @@ flows:
         name: Mark converged
         type: set_vars
         scope_id: conv_loop
-        position_x: 700
+        position_x: 820
         position_y: 60
         assignments:
         - name: attempts
@@ -1763,8 +1763,8 @@ flows:
         name: Mark not converged
         type: set_vars
         scope_id: conv_loop
-        position_x: 700
-        position_y: 220
+        position_x: 820
+        position_y: 260
         assignments:
         - name: attempts
           expr: (run.vars.attempts | default(0) | int) + 1
@@ -1775,14 +1775,14 @@ flows:
         type: loop_end
         loop_ref: conv_loop
         scope_id: conv_loop
-        position_x: 972
-        position_y: 386
+        position_x: 1182
+        position_y: 426
       - id: verdict
         name: How fast did we converge?
         type: branch
         branch_mode: rules
-        position_x: 1740
-        position_y: 180
+        position_x: 2000
+        position_y: 280
         cases:
         - id: c_first
           label: Converged on first check
@@ -1791,20 +1791,20 @@ flows:
         name: Healthy (first check)
         type: terminal
         terminal_status: success
-        position_x: 2060
-        position_y: 100
+        position_x: 2360
+        position_y: 180
       - id: done_retry
         name: Converged after retries
         type: terminal
         terminal_status: success
-        position_x: 2060
-        position_y: 260
+        position_x: 2360
+        position_y: 320
       - id: not_converged
         name: Did not converge
         type: terminal
         terminal_status: failure
-        position_x: 1740
-        position_y: 420
+        position_x: 2000
+        position_y: 560
       edges:
       - id: e_start_init
         source: start:start
@@ -1891,12 +1891,12 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 200
+        position_y: 280
       - id: sv_zero
         name: Reset audit counters
         type: set_vars
-        position_x: 260
-        position_y: 200
+        position_x: 200
+        position_y: 280
         assignments:
         - name: audited
           expr: '0'
@@ -1908,19 +1908,19 @@ flows:
         loop_mode: for_each
         items_expr: inputs.check_prefixes
         collect: loop.item
-        position_x: 560
-        position_y: 40
-        width: 1150
-        height: 380
+        position_x: 620
+        position_y: 60
+        width: 1260
+        height: 460
       - id: check_route
-        name: 'Route lookup: {{ loop.item }}'
+        name: Per-prefix route lookup
         type: step
         kind: CHECK
         phase: VERIFY
         handler: netcli.collect_evidence
         scope_id: prefix_loop
-        position_x: 80
-        position_y: 90
+        position_x: 60
+        position_y: 100
         target_selectors:
         - type: role
           role: audit_targets
@@ -1939,8 +1939,8 @@ flows:
         phase: VERIFY
         handler: evidence.assert
         scope_id: prefix_loop
-        position_x: 380
-        position_y: 90
+        position_x: 440
+        position_y: 100
         params:
           artifact_step_id: check_route
           target_role: audit_targets
@@ -1957,8 +1957,8 @@ flows:
         name: Count audited
         type: set_vars
         scope_id: prefix_loop
-        position_x: 700
-        position_y: 40
+        position_x: 820
+        position_y: 60
         assignments:
         - name: audited
           expr: (run.vars.audited | default(0) | int) + 1
@@ -1966,8 +1966,8 @@ flows:
         name: Count missing
         type: set_vars
         scope_id: prefix_loop
-        position_x: 700
-        position_y: 220
+        position_x: 820
+        position_y: 260
         assignments:
         - name: audited
           expr: (run.vars.audited | default(0) | int) + 1
@@ -1978,14 +1978,14 @@ flows:
         type: loop_end
         loop_ref: prefix_loop
         scope_id: prefix_loop
-        position_x: 1062
-        position_y: 346
+        position_x: 1182
+        position_y: 426
       - id: audit_verdict
         name: Any prefix missing?
         type: branch
         branch_mode: rules
-        position_x: 1860
-        position_y: 200
+        position_x: 2000
+        position_y: 260
         cases:
         - id: c_clean
           label: All prefixes present
@@ -1994,14 +1994,14 @@ flows:
         name: All prefixes present
         type: terminal
         terminal_status: success
-        position_x: 2180
-        position_y: 120
+        position_x: 2360
+        position_y: 160
       - id: audit_gaps
         name: Prefixes missing
         type: terminal
         terminal_status: failure
-        position_x: 2180
-        position_y: 300
+        position_x: 2360
+        position_y: 340
       edges:
       - id: e_start_zero
         source: start:start
@@ -2124,12 +2124,12 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 200
+        position_y: 240
       - id: sv_init
         name: Init rollout state
         type: set_vars
-        position_x: 260
-        position_y: 200
+        position_x: 200
+        position_y: 240
         assignments:
         - name: rolled_out
           expr: '0'
@@ -2142,28 +2142,28 @@ flows:
         items_expr: inputs.baseline_hosts
         max_iterations: 16
         collect: loop.item
-        position_x: 560
-        position_y: 40
-        width: 1000
-        height: 360
+        position_x: 600
+        position_y: 80
+        width: 1280
+        height: 340
       - id: sv_mark
         name: Mark current host
         type: set_vars
         scope_id: rollout
         position_x: 60
-        position_y: 90
+        position_y: 100
         assignments:
         - name: current_host
           expr: loop.item
       - id: apply_baseline
-        name: 'Baseline: {{ loop.item }}'
+        name: Apply server baseline
         type: step
         kind: EXECUTE
         phase: IMPLEMENTATION
         handler: container.run
         scope_id: rollout
-        position_x: 340
-        position_y: 90
+        position_x: 460
+        position_y: 100
         mounted_files:
         - hosts.ini
         - baseline.yml
@@ -2191,8 +2191,8 @@ flows:
         name: Count host done
         type: set_vars
         scope_id: rollout
-        position_x: 660
-        position_y: 90
+        position_x: 840
+        position_y: 100
         assignments:
         - name: rolled_out
           expr: (run.vars.rolled_out | default(0) | int) + 1
@@ -2201,7 +2201,7 @@ flows:
         type: loop_end
         loop_ref: rollout
         scope_id: rollout
-        position_x: 912
+        position_x: 1202
         position_y: 306
       - id: report
         name: Rollout report
@@ -2209,8 +2209,8 @@ flows:
         kind: EXECUTE
         phase: VERIFY
         handler: container.run
-        position_x: 1660
-        position_y: 120
+        position_x: 2000
+        position_y: 200
         params:
           image: alpine:3.22
           working_dir: /workspace
@@ -2230,14 +2230,14 @@ flows:
         name: Rollout complete
         type: terminal
         terminal_status: success
-        position_x: 1960
-        position_y: 120
+        position_x: 2420
+        position_y: 210
       - id: halted
         name: Rollout halted
         type: terminal
         terminal_status: failure
-        position_x: 1660
-        position_y: 420
+        position_x: 2000
+        position_y: 480
       edges:
       - id: e_start_init
         source: start:start
@@ -2318,7 +2318,7 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 260
+        position_y: 280
       - id: plan
         name: terraform plan
         type: step
@@ -2326,8 +2326,8 @@ flows:
         phase: PREPARE
         handler: container.run
         execution_affinity: shared
-        position_x: 300
-        position_y: 260
+        position_x: 200
+        position_y: 280
         mounted_files:
         - service.tf
         - plan.sh
@@ -2353,7 +2353,7 @@ flows:
         branch_mode: value
         value_expr: inputs.tf_action
         position_x: 620
-        position_y: 260
+        position_y: 270
         cases:
         - id: c_plan
           label: Plan only
@@ -2365,14 +2365,14 @@ flows:
         name: Plan reviewed
         type: terminal
         terminal_status: success
-        position_x: 940
-        position_y: 60
+        position_x: 970
+        position_y: 80
       - id: gate
         name: Approve apply
         type: approval
         phase: IMPLEMENTATION
-        position_x: 940
-        position_y: 260
+        position_x: 970
+        position_y: 270
         params:
           title: Approve Terraform apply
           message: Review the terraform-plan.txt artifact on the plan step, then approve to apply the saved plan and push
@@ -2390,8 +2390,8 @@ flows:
         phase: IMPLEMENTATION
         handler: container.run
         execution_affinity: shared
-        position_x: 1240
-        position_y: 260
+        position_x: 1440
+        position_y: 270
         mounted_files:
         - apply.sh
         params:
@@ -2413,8 +2413,8 @@ flows:
         phase: VERIFY
         handler: container.run
         execution_affinity: shared
-        position_x: 1540
-        position_y: 260
+        position_x: 1860
+        position_y: 270
         mounted_files:
         - verify.sh
         params:
@@ -2439,8 +2439,8 @@ flows:
         kind: ACTION
         phase: IMPLEMENTATION
         handler: netcli.execute
-        position_x: 1840
-        position_y: 260
+        position_x: 2280
+        position_y: 270
         target_selectors:
         - type: role
           role: tf_targets
@@ -2462,8 +2462,8 @@ flows:
         kind: CHECK
         phase: VERIFY
         handler: netcli.collect_evidence
-        position_x: 2140
-        position_y: 260
+        position_x: 2700
+        position_y: 270
         target_selectors:
         - type: role
           role: tf_targets
@@ -2481,8 +2481,8 @@ flows:
         kind: CHECK
         phase: VERIFY
         handler: evidence.assert
-        position_x: 2440
-        position_y: 260
+        position_x: 3120
+        position_y: 270
         params:
           artifact_step_id: postcheck
           target_role: tf_targets
@@ -2499,14 +2499,14 @@ flows:
         name: Service deployed
         type: terminal
         terminal_status: success
-        position_x: 2740
-        position_y: 140
+        position_x: 3540
+        position_y: 180
       - id: failed
         name: Deployment failed
         type: terminal
         terminal_status: failure
-        position_x: 1540
-        position_y: 560
+        position_x: 1700
+        position_y: 600
       edges:
       - id: e_start_plan
         source: start:start
@@ -2693,12 +2693,12 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 240
+        position_y: 280
       - id: sv_init
         name: Init audit state
         type: set_vars
-        position_x: 260
-        position_y: 240
+        position_x: 200
+        position_y: 280
         assignments:
         - name: compliant
           expr: 'false'
@@ -2710,10 +2710,10 @@ flows:
         loop_mode: while
         condition: not (run.vars.compliant | default(false))
         max_iterations: 3
-        position_x: 560
-        position_y: 40
-        width: 1120
-        height: 400
+        position_x: 620
+        position_y: 60
+        width: 1640
+        height: 460
       - id: audit
         name: Audit running config
         type: step
@@ -2722,7 +2722,7 @@ flows:
         handler: netcli.collect_evidence
         scope_id: fix_loop
         position_x: 60
-        position_y: 90
+        position_y: 100
         target_selectors:
         - type: role
           role: drift_targets
@@ -2741,8 +2741,8 @@ flows:
         phase: VERIFY
         handler: evidence.assert
         scope_id: fix_loop
-        position_x: 380
-        position_y: 90
+        position_x: 440
+        position_y: 100
         params:
           artifact_step_id: audit
           target_role: drift_targets
@@ -2759,8 +2759,8 @@ flows:
         name: Mark compliant
         type: set_vars
         scope_id: fix_loop
-        position_x: 700
-        position_y: 40
+        position_x: 820
+        position_y: 60
         assignments:
         - name: compliant
           expr: 'true'
@@ -2773,8 +2773,8 @@ flows:
         phase: IMPLEMENTATION
         handler: container.run
         scope_id: fix_loop
-        position_x: 700
-        position_y: 220
+        position_x: 820
+        position_y: 260
         mounted_files:
         - routers.ini
         - remediate.yml
@@ -2798,8 +2798,8 @@ flows:
         name: Mark drifting
         type: set_vars
         scope_id: fix_loop
-        position_x: 1000
-        position_y: 220
+        position_x: 1200
+        position_y: 260
         assignments:
         - name: compliant
           expr: 'false'
@@ -2810,20 +2810,20 @@ flows:
         type: loop_end
         loop_ref: fix_loop
         scope_id: fix_loop
-        position_x: 1032
-        position_y: 346
+        position_x: 1562
+        position_y: 426
       - id: converged
         name: Fleet compliant
         type: terminal
         terminal_status: success
-        position_x: 1860
-        position_y: 140
+        position_x: 2380
+        position_y: 240
       - id: manual
         name: Manual intervention required
         type: terminal
         terminal_status: failure
-        position_x: 1860
-        position_y: 420
+        position_x: 2380
+        position_y: 440
       edges:
       - id: e_start_init
         source: start:start

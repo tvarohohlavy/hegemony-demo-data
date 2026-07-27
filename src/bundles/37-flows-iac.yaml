@@ -46,12 +46,12 @@ flows:
             name: Start
             type: start
             position_x: 0
-            position_y: 200
+            position_y: 240
           - id: sv_init
             name: Init rollout state
             type: set_vars
-            position_x: 260
-            position_y: 200
+            position_x: 200
+            position_y: 240
             assignments:
               - name: rolled_out
                 expr: "0"
@@ -64,28 +64,28 @@ flows:
             items_expr: "inputs.baseline_hosts"
             max_iterations: 16
             collect: "loop.item"
-            position_x: 560
-            position_y: 40
-            width: 1000
-            height: 360
+            position_x: 600
+            position_y: 80
+            width: 1280
+            height: 340
           - id: sv_mark
             name: Mark current host
             type: set_vars
             scope_id: rollout
             position_x: 60
-            position_y: 90
+            position_y: 100
             assignments:
               - name: current_host
                 expr: "loop.item"
           - id: apply_baseline
-            name: "Baseline: {{ loop.item }}"
+            name: Apply server baseline
             type: step
             kind: EXECUTE
             phase: IMPLEMENTATION
             handler: container.run
             scope_id: rollout
-            position_x: 340
-            position_y: 90
+            position_x: 460
+            position_y: 100
             mounted_files:
               - hosts.ini
               - baseline.yml
@@ -113,8 +113,8 @@ flows:
             name: Count host done
             type: set_vars
             scope_id: rollout
-            position_x: 660
-            position_y: 90
+            position_x: 840
+            position_y: 100
             assignments:
               - name: rolled_out
                 expr: "(run.vars.rolled_out | default(0) | int) + 1"
@@ -123,7 +123,7 @@ flows:
             type: loop_end
             loop_ref: rollout
             scope_id: rollout
-            position_x: 912
+            position_x: 1202
             position_y: 306
           - id: report
             name: Rollout report
@@ -131,8 +131,8 @@ flows:
             kind: EXECUTE
             phase: VERIFY
             handler: container.run
-            position_x: 1660
-            position_y: 120
+            position_x: 2000
+            position_y: 200
             params:
               image: alpine:3.22
               working_dir: /workspace
@@ -156,14 +156,14 @@ flows:
             name: Rollout complete
             type: terminal
             terminal_status: success
-            position_x: 1960
-            position_y: 120
+            position_x: 2420
+            position_y: 210
           - id: halted
             name: Rollout halted
             type: terminal
             terminal_status: failure
-            position_x: 1660
-            position_y: 420
+            position_x: 2000
+            position_y: 480
         edges:
           - id: e_start_init
             source: start:start
@@ -251,7 +251,7 @@ flows:
             name: Start
             type: start
             position_x: 0
-            position_y: 260
+            position_y: 280
           - id: plan
             name: terraform plan
             type: step
@@ -259,8 +259,8 @@ flows:
             phase: PREPARE
             handler: container.run
             execution_affinity: shared
-            position_x: 300
-            position_y: 260
+            position_x: 200
+            position_y: 280
             mounted_files:
               - service.tf
               - plan.sh
@@ -286,7 +286,7 @@ flows:
             branch_mode: value
             value_expr: "inputs.tf_action"
             position_x: 620
-            position_y: 260
+            position_y: 270
             cases:
               - id: c_plan
                 label: Plan only
@@ -298,14 +298,14 @@ flows:
             name: Plan reviewed
             type: terminal
             terminal_status: success
-            position_x: 940
-            position_y: 60
+            position_x: 970
+            position_y: 80
           - id: gate
             name: Approve apply
             type: approval
             phase: IMPLEMENTATION
-            position_x: 940
-            position_y: 260
+            position_x: 970
+            position_y: 270
             params:
               title: Approve Terraform apply
               message: >-
@@ -325,8 +325,8 @@ flows:
             phase: IMPLEMENTATION
             handler: container.run
             execution_affinity: shared
-            position_x: 1240
-            position_y: 260
+            position_x: 1440
+            position_y: 270
             mounted_files:
               - apply.sh
             params:
@@ -348,8 +348,8 @@ flows:
             phase: VERIFY
             handler: container.run
             execution_affinity: shared
-            position_x: 1540
-            position_y: 260
+            position_x: 1860
+            position_y: 270
             mounted_files:
               - verify.sh
             params:
@@ -374,8 +374,8 @@ flows:
             kind: ACTION
             phase: IMPLEMENTATION
             handler: netcli.execute
-            position_x: 1840
-            position_y: 260
+            position_x: 2280
+            position_y: 270
             target_selectors:
               - type: role
                 role: tf_targets
@@ -397,8 +397,8 @@ flows:
             kind: CHECK
             phase: VERIFY
             handler: netcli.collect_evidence
-            position_x: 2140
-            position_y: 260
+            position_x: 2700
+            position_y: 270
             target_selectors:
               - type: role
                 role: tf_targets
@@ -416,8 +416,8 @@ flows:
             kind: CHECK
             phase: VERIFY
             handler: evidence.assert
-            position_x: 2440
-            position_y: 260
+            position_x: 3120
+            position_y: 270
             params:
               artifact_step_id: postcheck
               target_role: tf_targets
@@ -434,14 +434,14 @@ flows:
             name: Service deployed
             type: terminal
             terminal_status: success
-            position_x: 2740
-            position_y: 140
+            position_x: 3540
+            position_y: 180
           - id: failed
             name: Deployment failed
             type: terminal
             terminal_status: failure
-            position_x: 1540
-            position_y: 560
+            position_x: 1700
+            position_y: 600
         edges:
           - id: e_start_plan
             source: start:start
@@ -632,12 +632,12 @@ flows:
             name: Start
             type: start
             position_x: 0
-            position_y: 240
+            position_y: 280
           - id: sv_init
             name: Init audit state
             type: set_vars
-            position_x: 260
-            position_y: 240
+            position_x: 200
+            position_y: 280
             assignments:
               - name: compliant
                 expr: "false"
@@ -649,10 +649,10 @@ flows:
             loop_mode: while
             condition: "not (run.vars.compliant | default(false))"
             max_iterations: 3
-            position_x: 560
-            position_y: 40
-            width: 1120
-            height: 400
+            position_x: 620
+            position_y: 60
+            width: 1640
+            height: 460
           - id: audit
             name: Audit running config
             type: step
@@ -661,7 +661,7 @@ flows:
             handler: netcli.collect_evidence
             scope_id: fix_loop
             position_x: 60
-            position_y: 90
+            position_y: 100
             target_selectors:
               - type: role
                 role: drift_targets
@@ -680,8 +680,8 @@ flows:
             phase: VERIFY
             handler: evidence.assert
             scope_id: fix_loop
-            position_x: 380
-            position_y: 90
+            position_x: 440
+            position_y: 100
             params:
               artifact_step_id: audit
               target_role: drift_targets
@@ -698,8 +698,8 @@ flows:
             name: Mark compliant
             type: set_vars
             scope_id: fix_loop
-            position_x: 700
-            position_y: 40
+            position_x: 820
+            position_y: 60
             assignments:
               - name: compliant
                 expr: "true"
@@ -712,8 +712,8 @@ flows:
             phase: IMPLEMENTATION
             handler: container.run
             scope_id: fix_loop
-            position_x: 700
-            position_y: 220
+            position_x: 820
+            position_y: 260
             mounted_files:
               - routers.ini
               - remediate.yml
@@ -737,8 +737,8 @@ flows:
             name: Mark drifting
             type: set_vars
             scope_id: fix_loop
-            position_x: 1000
-            position_y: 220
+            position_x: 1200
+            position_y: 260
             assignments:
               - name: compliant
                 expr: "false"
@@ -749,20 +749,20 @@ flows:
             type: loop_end
             loop_ref: fix_loop
             scope_id: fix_loop
-            position_x: 1032
-            position_y: 346
+            position_x: 1562
+            position_y: 426
           - id: converged
             name: Fleet compliant
             type: terminal
             terminal_status: success
-            position_x: 1860
-            position_y: 140
+            position_x: 2380
+            position_y: 240
           - id: manual
             name: Manual intervention required
             type: terminal
             terminal_status: failure
-            position_x: 1860
-            position_y: 420
+            position_x: 2380
+            position_y: 440
         edges:
           - id: e_start_init
             source: start:start

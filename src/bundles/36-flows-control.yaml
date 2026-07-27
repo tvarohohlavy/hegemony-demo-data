@@ -38,12 +38,12 @@ flows:
             name: Start
             type: start
             position_x: 0
-            position_y: 260
+            position_y: 300
           - id: sv_init
             name: Init counters
             type: set_vars
-            position_x: 260
-            position_y: 260
+            position_x: 200
+            position_y: 300
             assignments:
               - name: attempts
                 expr: "0"
@@ -55,10 +55,10 @@ flows:
             loop_mode: until
             condition: "run.vars.converged | default(false)"
             max_iterations: 6
-            position_x: 560
-            position_y: 60
-            width: 1060
-            height: 420
+            position_x: 620
+            position_y: 80
+            width: 1260
+            height: 460
           - id: collect_state
             name: Collect OSPF neighbors
             type: step
@@ -67,7 +67,7 @@ flows:
             handler: netcli.collect_evidence
             scope_id: conv_loop
             position_x: 60
-            position_y: 90
+            position_y: 100
             target_selectors:
               - type: role
                 role: converge_targets
@@ -86,8 +86,8 @@ flows:
             phase: VERIFY
             handler: evidence.assert
             scope_id: conv_loop
-            position_x: 380
-            position_y: 90
+            position_x: 440
+            position_y: 100
             params:
               artifact_step_id: collect_state
               target_role: converge_targets
@@ -104,7 +104,7 @@ flows:
             name: Mark converged
             type: set_vars
             scope_id: conv_loop
-            position_x: 700
+            position_x: 820
             position_y: 60
             assignments:
               - name: attempts
@@ -115,8 +115,8 @@ flows:
             name: Mark not converged
             type: set_vars
             scope_id: conv_loop
-            position_x: 700
-            position_y: 220
+            position_x: 820
+            position_y: 260
             assignments:
               - name: attempts
                 expr: "(run.vars.attempts | default(0) | int) + 1"
@@ -127,14 +127,14 @@ flows:
             type: loop_end
             loop_ref: conv_loop
             scope_id: conv_loop
-            position_x: 972
-            position_y: 386
+            position_x: 1182
+            position_y: 426
           - id: verdict
             name: How fast did we converge?
             type: branch
             branch_mode: rules
-            position_x: 1740
-            position_y: 180
+            position_x: 2000
+            position_y: 280
             cases:
               - id: c_first
                 label: Converged on first check
@@ -143,20 +143,20 @@ flows:
             name: Healthy (first check)
             type: terminal
             terminal_status: success
-            position_x: 2060
-            position_y: 100
+            position_x: 2360
+            position_y: 180
           - id: done_retry
             name: Converged after retries
             type: terminal
             terminal_status: success
-            position_x: 2060
-            position_y: 260
+            position_x: 2360
+            position_y: 320
           - id: not_converged
             name: Did not converge
             type: terminal
             terminal_status: failure
-            position_x: 1740
-            position_y: 420
+            position_x: 2000
+            position_y: 560
         edges:
           - id: e_start_init
             source: start:start
@@ -250,12 +250,12 @@ flows:
             name: Start
             type: start
             position_x: 0
-            position_y: 200
+            position_y: 280
           - id: sv_zero
             name: Reset audit counters
             type: set_vars
-            position_x: 260
-            position_y: 200
+            position_x: 200
+            position_y: 280
             assignments:
               - name: audited
                 expr: "0"
@@ -267,19 +267,19 @@ flows:
             loop_mode: for_each
             items_expr: "inputs.check_prefixes"
             collect: "loop.item"
-            position_x: 560
-            position_y: 40
-            width: 1150
-            height: 380
+            position_x: 620
+            position_y: 60
+            width: 1260
+            height: 460
           - id: check_route
-            name: "Route lookup: {{ loop.item }}"
+            name: Per-prefix route lookup
             type: step
             kind: CHECK
             phase: VERIFY
             handler: netcli.collect_evidence
             scope_id: prefix_loop
-            position_x: 80
-            position_y: 90
+            position_x: 60
+            position_y: 100
             target_selectors:
               - type: role
                 role: audit_targets
@@ -298,8 +298,8 @@ flows:
             phase: VERIFY
             handler: evidence.assert
             scope_id: prefix_loop
-            position_x: 380
-            position_y: 90
+            position_x: 440
+            position_y: 100
             params:
               artifact_step_id: check_route
               target_role: audit_targets
@@ -316,8 +316,8 @@ flows:
             name: Count audited
             type: set_vars
             scope_id: prefix_loop
-            position_x: 700
-            position_y: 40
+            position_x: 820
+            position_y: 60
             assignments:
               - name: audited
                 expr: "(run.vars.audited | default(0) | int) + 1"
@@ -325,8 +325,8 @@ flows:
             name: Count missing
             type: set_vars
             scope_id: prefix_loop
-            position_x: 700
-            position_y: 220
+            position_x: 820
+            position_y: 260
             assignments:
               - name: audited
                 expr: "(run.vars.audited | default(0) | int) + 1"
@@ -337,14 +337,14 @@ flows:
             type: loop_end
             loop_ref: prefix_loop
             scope_id: prefix_loop
-            position_x: 1062
-            position_y: 346
+            position_x: 1182
+            position_y: 426
           - id: audit_verdict
             name: Any prefix missing?
             type: branch
             branch_mode: rules
-            position_x: 1860
-            position_y: 200
+            position_x: 2000
+            position_y: 260
             cases:
               - id: c_clean
                 label: All prefixes present
@@ -353,14 +353,14 @@ flows:
             name: All prefixes present
             type: terminal
             terminal_status: success
-            position_x: 2180
-            position_y: 120
+            position_x: 2360
+            position_y: 160
           - id: audit_gaps
             name: Prefixes missing
             type: terminal
             terminal_status: failure
-            position_x: 2180
-            position_y: 300
+            position_x: 2360
+            position_y: 340
         edges:
           - id: e_start_zero
             source: start:start
