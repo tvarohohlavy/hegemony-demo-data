@@ -92,9 +92,16 @@ flows:
               artifact_step_id: collect_state
               target_role: converge_targets
               command: show ip ospf neighbor
+              # Line scope: EVERY neighbor row must say Full — a whole-output
+              # "contains Full" would pass with one healthy adjacency among
+              # broken ones. The filter selects the rows (they start with the
+              # Neighbor ID address) and min_lines rejects an empty table.
               operator: contains
               expected: Full
-              message: At least one router still has a non-Full OSPF neighbor.
+              match_scope: lines
+              line_filter: '^\s*\d+\.\d+\.\d+\.\d+'
+              min_lines: 1
+              message: At least one router has a non-Full (or no) OSPF neighbor.
             policy:
               timeout_sec: 60
               retries: 0

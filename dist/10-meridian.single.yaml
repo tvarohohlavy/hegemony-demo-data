@@ -1742,7 +1742,10 @@ flows:
           command: show ip ospf neighbor
           operator: contains
           expected: Full
-          message: At least one router still has a non-Full OSPF neighbor.
+          match_scope: lines
+          line_filter: ^\s*\d+\.\d+\.\d+\.\d+
+          min_lines: 1
+          message: At least one router has a non-Full (or no) OSPF neighbor.
         policy:
           timeout_sec: 60
           retries: 0
