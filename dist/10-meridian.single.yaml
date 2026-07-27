@@ -1703,6 +1703,7 @@ flows:
         loop_mode: until
         condition: run.vars.converged | default(false)
         max_iterations: 6
+        iteration_delay_sec: 10
         position_x: 620
         position_y: 80
         width: 1260

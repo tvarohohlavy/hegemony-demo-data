@@ -55,6 +55,9 @@ flows:
             loop_mode: until
             condition: "run.vars.converged | default(false)"
             max_iterations: 6
+            # Pace the poll: wait between re-checks instead of hammering the
+            # routers — 6 attempts x 10s rides out OSPF adjacency formation.
+            iteration_delay_sec: 10
             position_x: 620
             position_y: 80
             width: 1260
