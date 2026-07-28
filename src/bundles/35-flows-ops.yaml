@@ -87,7 +87,7 @@ flows:
                       DRY=false
                       # Clone so each backup appends to the repository history.
                       git -c credential.helper="$CRED_HELPER" clone -q \
-                        "http://localhost:3000/{{ vars.GITEA_ORG }}/config-backups.git" .
+                        "{{ vars.GITEA_URL }}/{{ vars.GITEA_ORG }}/config-backups.git" .
                       ;;
                   esac
                   git config user.email "{{ vars.NOC_CONTACT }}"

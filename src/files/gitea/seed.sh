@@ -28,7 +28,7 @@
 set -e
 
 GITEA_CONTAINER="${GITEA_CONTAINER:-meridian-gitea}"
-BASE="${GITEA_URL:-http://host.docker.internal:3000}"
+BASE="${GITEA_URL:-http://dind:3000}"
 ADMIN_USER="${ADMIN_USER:-meridian-admin}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-demo-gitea-admin-password}"
 ORG="${GITEA_ORG:-meridian}"

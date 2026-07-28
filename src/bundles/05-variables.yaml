@@ -24,10 +24,13 @@ variables:
 
   # --- Demo datacenter (Gitea + containerlab), bootstrapped by a flow --------
   - name: GITEA_HOST
-    value: localhost
+    value: dind
     description: >-
-      Host that publishes the demo Gitea service. The flows that reach Gitea run
-      as host-networked containers, so localhost:3000 addresses it directly.
+      Host that publishes the demo Gitea service. Gitea runs inside the
+      platform's dind sandbox daemon and binds :3000 in the dind netns, so the
+      compose-DNS name `dind` addresses it both from host-networked flow steps
+      (which share that netns) and from the platform API. The dind service
+      re-publishes the port to the operator's browser as localhost:3000.
   - name: GITEA_PORT
     value: "3000"
     description: Published port of the demo Gitea service.

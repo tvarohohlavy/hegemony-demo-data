@@ -9,11 +9,12 @@
 #   * hegemony-demo-data — THIS public repository, whose demo-inventory/ tree
 #     is read by the "lab-inventory" git provider (25-inventory-providers.yaml).
 #   * config-backups — the demo Gitea repository the backup FLOW pushes to from
-#     inside its own container. It is http:// on the Docker host, so this entry
-#     carries the per-repository allow_insecure_url opt-in (SSRF guard disabled
-#     for THIS repo only; every other repository stays protected). It is public
-#     on the demo Gitea, so it clones anonymously; the entries appear once "Lab:
-#     Provision and tear down demo datacenter" has stood Gitea up.
+#     inside its own container. Gitea lives inside the platform's dind sandbox
+#     daemon and is addressed as http://dind:3000 over compose DNS, so this
+#     entry carries the per-repository allow_insecure_url opt-in (SSRF guard
+#     disabled for THIS repo only; every other repository stays protected). It
+#     is public on the demo Gitea, so it clones anonymously; the entries appear
+#     once "Lab: Provision and tear down demo datacenter" has stood Gitea up.
 #   * flow-backups / platform-backups — repositories Hegemony itself WRITES to
 #     through its native git integrations (not a flow container): flow-backups
 #     receives flow definitions via flow Git-sync, platform-backups receives
@@ -35,18 +36,18 @@ git_repositories:
     branch: main
     sync_stale_seconds: 300
   - name: config-backups
-    url: "http://host.docker.internal:3000/meridian/config-backups.git"
+    url: "http://dind:3000/meridian/config-backups.git"
     branch: main
     sync_stale_seconds: 60
     allow_insecure_url: true
   - name: flow-backups
-    url: "http://host.docker.internal:3000/meridian/flow-backups.git"
+    url: "http://dind:3000/meridian/flow-backups.git"
     branch: main
     sync_stale_seconds: 60
     allow_insecure_url: true
     auth_secret_ref: "{{ secret('vault://orgs/default/secrets/meridian/gitea/token/token') }}"
   - name: platform-backups
-    url: "http://host.docker.internal:3000/meridian/platform-backups.git"
+    url: "http://dind:3000/meridian/platform-backups.git"
     branch: main
     sync_stale_seconds: 60
     allow_insecure_url: true
