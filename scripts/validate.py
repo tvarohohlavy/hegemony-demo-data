@@ -333,16 +333,20 @@ class Validator:
             nodes = graph.get("nodes")
             if not isinstance(nodes, list):
                 continue
-            loop_ids = {
-                node.get("id")
-                for node in nodes
-                if isinstance(node, dict) and node.get("type") == "loop"
-            }
+            loop_ids: set[str] = set()
+            for node in nodes:
+                if not isinstance(node, dict) or node.get("type") != "loop":
+                    continue
+                loop_id = node.get("id")
+                if isinstance(loop_id, str) and loop_id:
+                    loop_ids.add(loop_id)
             for node in nodes:
                 if not isinstance(node, dict):
                     continue
                 ref = node.get("loop_ref")
-                if ref is not None and ref not in loop_ids:
+                # Type-guard before membership: a malformed (list/dict) ref must
+                # report as invalid, not TypeError out of the whole validation.
+                if ref is not None and (not isinstance(ref, str) or ref not in loop_ids):
                     self.error(
                         f"flow {name!r} node {node.get('id')!r} loop_ref {ref!r} "
                         "does not name a loop node in the same graph"
