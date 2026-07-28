@@ -470,15 +470,15 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 200
+        position_y: 280
       - id: build_image
         name: Build lab images
         type: step
         kind: EXECUTE
         phase: PREPARE
         handler: container.run
-        position_x: 320
-        position_y: 200
+        position_x: 240
+        position_y: 280
         mounted_files:
         - Dockerfile
         - entrypoint.sh
@@ -504,16 +504,16 @@ flows:
       - id: fork
         name: Deploy lab and Gitea
         type: fork
-        position_x: 620
-        position_y: 200
+        position_x: 660
+        position_y: 300
       - id: deploy_lab
         name: Deploy containerlab multi-area lab
         type: step
         kind: EXECUTE
         phase: IMPLEMENTATION
         handler: container.run
-        position_x: 920
-        position_y: 40
+        position_x: 860
+        position_y: 60
         mounted_files:
         - topology.clab.yml
         - frr/
@@ -546,8 +546,8 @@ flows:
         kind: ACTION
         phase: IMPLEMENTATION
         handler: container.run
-        position_x: 1220
-        position_y: 40
+        position_x: 1280
+        position_y: 60
         params:
           image: ghcr.io/srl-labs/clab:0.77.0
           working_dir: /workspace
@@ -567,8 +567,8 @@ flows:
         kind: CHECK
         phase: VERIFY
         handler: container.run
-        position_x: 1520
-        position_y: 40
+        position_x: 1700
+        position_y: 60
         params:
           image: ghcr.io/srl-labs/clab:0.77.0
           working_dir: /workspace
@@ -597,8 +597,8 @@ flows:
         kind: EXECUTE
         phase: IMPLEMENTATION
         handler: container.run
-        position_x: 920
-        position_y: 360
+        position_x: 860
+        position_y: 500
         mounted_files:
         - seed.sh
         params:
@@ -625,14 +625,32 @@ flows:
         join_mode: all
         failure_policy: propagate
         cancel_policy: wait
-        position_x: 1820
-        position_y: 200
+        position_x: 2160
+        position_y: 300
+      - id: converge_check
+        name: Kick off OSPF convergence check
+        type: step
+        kind: EXECUTE
+        phase: IMPLEMENTATION
+        handler: flow.run
+        position_x: 2320
+        position_y: 500
+        params:
+          flow_name: 'Net: Wait for OSPF convergence'
+          wait_for_completion: false
+          field_mappings: {}
+          target_mappings: {}
+        policy:
+          timeout_sec: 60
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: false
       - id: hold
         name: Interact, then approve to tear down
         type: approval
         phase: IMPLEMENTATION
-        position_x: 2120
-        position_y: 200
+        position_x: 2320
+        position_y: 290
         params:
           title: Demo datacenter is up — approve to tear it down
           message: 'The lab is running: 11 routers and 4 Linux endpoint hosts in 172.20.30.0/24 (dc1 .11-.15, br1 .21-.23,
@@ -645,7 +663,7 @@ flows:
         kind: EXECUTE
         phase: CLEANUP
         handler: container.run
-        position_x: 2420
+        position_x: 2780
         position_y: 120
         mounted_files:
         - topology.clab.yml
@@ -683,20 +701,20 @@ flows:
         name: Lab torn down
         type: terminal
         terminal_status: success
-        position_x: 2720
-        position_y: 40
+        position_x: 3200
+        position_y: 60
       - id: left_running
         name: Lab left running
         type: terminal
         terminal_status: success
-        position_x: 2720
-        position_y: 260
+        position_x: 3200
+        position_y: 320
       - id: failed
         name: Lifecycle failed
         type: terminal
         terminal_status: failure
-        position_x: 2420
-        position_y: 400
+        position_x: 2780
+        position_y: 560
       edges:
       - id: e_start_build
         source: start:start
@@ -737,8 +755,14 @@ flows:
       - id: e_gitea_join_fail
         source: deploy_gitea:failure
         target: join
-      - id: e_join_hold
+      - id: e_join_converge
         source: join:joined
+        target: converge_check
+      - id: e_converge_hold
+        source: converge_check:success
+        target: hold
+      - id: e_converge_hold_fail
+        source: converge_check:failure
         target: hold
       - id: e_join_failed
         source: join:join_failed
@@ -812,15 +836,15 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 120
+        position_y: 140
       - id: collect_configs
         name: Collect running configs
         type: step
         kind: CHECK
         phase: PREPARE
         handler: netcli.collect_evidence
-        position_x: 320
-        position_y: 120
+        position_x: 240
+        position_y: 140
         target_selectors:
         - type: role
           role: backup_targets
@@ -838,8 +862,8 @@ flows:
         kind: EXECUTE
         phase: IMPLEMENTATION
         handler: container.run
-        position_x: 640
-        position_y: 120
+        position_x: 660
+        position_y: 140
         params:
           image: alpine/git:v2.45.2
           entrypoint: /bin/sh
@@ -875,14 +899,14 @@ flows:
         name: Backup complete
         type: terminal
         terminal_status: success
-        position_x: 960
-        position_y: 40
+        position_x: 1080
+        position_y: 60
       - id: failed
         name: Backup failed
         type: terminal
         terminal_status: failure
-        position_x: 960
-        position_y: 240
+        position_x: 1080
+        position_y: 260
       edges:
       - id: e_start_collect
         source: start:start
@@ -1003,13 +1027,13 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 200
+        position_y: 220
       - id: approval
         name: Approve announcement
         type: approval
         phase: IMPLEMENTATION
-        position_x: 300
-        position_y: 200
+        position_x: 240
+        position_y: 210
         params:
           title: Approve service prefix announcement
           message: Advertise the requested service prefix on the selected routers? The prefix, OSPF settings and change ID
@@ -1026,7 +1050,7 @@ flows:
         kind: CHECK
         phase: PREPARE
         handler: netcli.collect_evidence
-        position_x: 600
+        position_x: 700
         position_y: 120
         target_selectors:
         - type: role
@@ -1047,7 +1071,7 @@ flows:
         kind: ACTION
         phase: IMPLEMENTATION
         handler: netcli.execute
-        position_x: 900
+        position_x: 1120
         position_y: 120
         target_selectors:
         - type: role
@@ -1071,7 +1095,7 @@ flows:
         kind: CHECK
         phase: VERIFY
         handler: netcli.collect_evidence
-        position_x: 1200
+        position_x: 1540
         position_y: 120
         target_selectors:
         - type: role
@@ -1092,7 +1116,7 @@ flows:
         kind: CHECK
         phase: VERIFY
         handler: evidence.compare
-        position_x: 1500
+        position_x: 1960
         position_y: 120
         params:
           precheck_step_id: precheck
@@ -1108,14 +1132,14 @@ flows:
         name: Announcement complete
         type: terminal
         terminal_status: success
-        position_x: 1800
-        position_y: 40
+        position_x: 2380
+        position_y: 100
       - id: failed
         name: Announcement failed
         type: terminal
         terminal_status: failure
-        position_x: 1800
-        position_y: 360
+        position_x: 1400
+        position_y: 440
       edges:
       - id: e_start_approval
         source: start:start
@@ -1348,15 +1372,15 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 120
+        position_y: 140
       - id: reachable
         name: Reachability probe (TCP/22)
         type: step
         kind: CHECK
         phase: PREPARE
         handler: probe.connectivity
-        position_x: 300
-        position_y: 120
+        position_x: 240
+        position_y: 140
         target_selectors:
         - type: role
           role: health_targets
@@ -1376,8 +1400,8 @@ flows:
         kind: CHECK
         phase: VERIFY
         handler: netcli.collect_evidence
-        position_x: 600
-        position_y: 120
+        position_x: 660
+        position_y: 140
         target_selectors:
         - type: role
           role: health_targets
@@ -1396,15 +1420,18 @@ flows:
         kind: CHECK
         phase: VERIFY
         handler: evidence.assert
-        position_x: 900
-        position_y: 120
+        position_x: 1080
+        position_y: 140
         params:
           artifact_step_id: neighbors
           target_role: health_targets
           command: show ip ospf neighbor
           operator: contains
           expected: Full
-          message: OSPF neighbors are not Full on at least one router.
+          match_scope: lines
+          line_filter: ^\s*\d+\.\d+\.\d+\.\d+
+          min_lines: 1
+          message: OSPF neighbors are not Full (or absent) on at least one router.
         policy:
           timeout_sec: 60
           retries: 0
@@ -1414,14 +1441,14 @@ flows:
         name: Healthy
         type: terminal
         terminal_status: success
-        position_x: 1200
-        position_y: 40
+        position_x: 1500
+        position_y: 60
       - id: failed
         name: Unhealthy
         type: terminal
         terminal_status: failure
-        position_x: 1200
-        position_y: 240
+        position_x: 1500
+        position_y: 280
       edges:
       - id: e_start_reachable
         source: start:start
@@ -1496,15 +1523,15 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 120
+        position_y: 140
       - id: reachable
         name: Reachability probe (TCP/22)
         type: step
         kind: CHECK
         phase: PREPARE
         handler: probe.connectivity
-        position_x: 300
-        position_y: 120
+        position_x: 240
+        position_y: 140
         target_selectors:
         - type: role
           role: probe_sources
@@ -1524,8 +1551,8 @@ flows:
         kind: ACTION
         phase: PREPARE
         handler: shell.execute
-        position_x: 600
-        position_y: 120
+        position_x: 660
+        position_y: 140
         target_selectors:
         - type: role
           role: probe_sources
@@ -1548,8 +1575,8 @@ flows:
         kind: ACTION
         phase: VERIFY
         handler: shell.execute
-        position_x: 900
-        position_y: 120
+        position_x: 1080
+        position_y: 140
         target_selectors:
         - type: role
           role: probe_sources
@@ -1569,14 +1596,14 @@ flows:
         name: All destinations reachable
         type: terminal
         terminal_status: success
-        position_x: 1200
-        position_y: 40
+        position_x: 1500
+        position_y: 60
       - id: failed
         name: Reachability failed
         type: terminal
         terminal_status: failure
-        position_x: 1200
-        position_y: 240
+        position_x: 1500
+        position_y: 280
       edges:
       - id: e_start_reachable
         source: start:start
@@ -1675,6 +1702,1241 @@ flows:
               - value: 10.255.255.9
                 label: dc2-core-01 loopback (backbone)
       edges: []
+- name: 'Net: Wait for OSPF convergence'
+  description: 'Retry-until-healthy: collect OSPF neighbor state from the selected routers in a loop until every adjacency
+    is Full (or give up after 10 attempts, 5s apart). Run-scoped variables track the attempt count and verdict; a branch after
+    the loop reports whether the fabric was converged on the first check or needed retries.'
+  definition:
+    graph:
+      nodes:
+      - id: start
+        name: Start
+        type: start
+        position_x: 0
+        position_y: 300
+      - id: sv_init
+        name: Init counters
+        type: set_vars
+        position_x: 200
+        position_y: 300
+        assignments:
+        - name: attempts
+          expr: '0'
+        - name: converged
+          expr: 'false'
+      - id: conv_loop
+        name: Until converged
+        type: loop
+        loop_mode: until
+        condition: run.vars.converged | default(false)
+        max_iterations: 10
+        iteration_delay_sec: 5
+        position_x: 620
+        position_y: 80
+        width: 1260
+        height: 460
+      - id: collect_state
+        name: Collect OSPF neighbors
+        type: step
+        kind: CHECK
+        phase: VERIFY
+        handler: netcli.collect_evidence
+        scope_id: conv_loop
+        position_x: 60
+        position_y: 100
+        target_selectors:
+        - type: role
+          role: converge_targets
+        params:
+          commands:
+          - show ip ospf neighbor
+        policy:
+          timeout_sec: 120
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: true
+      - id: assert_full
+        name: All adjacencies Full?
+        type: step
+        kind: CHECK
+        phase: VERIFY
+        handler: evidence.assert
+        scope_id: conv_loop
+        position_x: 440
+        position_y: 100
+        params:
+          artifact_step_id: collect_state
+          target_role: converge_targets
+          command: show ip ospf neighbor
+          operator: contains
+          expected: Full
+          match_scope: lines
+          line_filter: ^\s*\d+\.\d+\.\d+\.\d+
+          min_lines: 1
+          message: At least one router has a non-Full (or no) OSPF neighbor.
+        policy:
+          timeout_sec: 60
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: false
+      - id: sv_ok
+        name: Mark converged
+        type: set_vars
+        scope_id: conv_loop
+        position_x: 820
+        position_y: 60
+        assignments:
+        - name: attempts
+          expr: (run.vars.attempts | default(0) | int) + 1
+        - name: converged
+          expr: 'true'
+      - id: sv_retry
+        name: Mark not converged
+        type: set_vars
+        scope_id: conv_loop
+        position_x: 820
+        position_y: 260
+        assignments:
+        - name: attempts
+          expr: (run.vars.attempts | default(0) | int) + 1
+        - name: converged
+          expr: 'false'
+      - id: conv_loop_end
+        name: Loop End
+        type: loop_end
+        loop_ref: conv_loop
+        scope_id: conv_loop
+        position_x: 1182
+        position_y: 426
+      - id: verdict
+        name: How fast did we converge?
+        type: branch
+        branch_mode: rules
+        position_x: 2000
+        position_y: 280
+        cases:
+        - id: c_first
+          label: Converged on first check
+          when: run.vars.attempts | int <= 1
+      - id: done_first
+        name: Healthy (first check)
+        type: terminal
+        terminal_status: success
+        position_x: 2360
+        position_y: 180
+      - id: done_retry
+        name: Converged after retries
+        type: terminal
+        terminal_status: success
+        position_x: 2360
+        position_y: 320
+      - id: not_converged
+        name: Did not converge
+        type: terminal
+        terminal_status: failure
+        position_x: 2000
+        position_y: 560
+      edges:
+      - id: e_start_init
+        source: start:start
+        target: sv_init
+      - id: e_init_loop
+        source: sv_init:success
+        target: conv_loop
+      - id: e_loop_collect
+        source: conv_loop:iterate
+        target: collect_state
+      - id: e_collect_assert
+        source: collect_state:success
+        target: assert_full
+      - id: e_collect_retry
+        source: collect_state:failure
+        target: sv_retry
+      - id: e_assert_ok
+        source: assert_full:success
+        target: sv_ok
+      - id: e_assert_retry
+        source: assert_full:failure
+        target: sv_retry
+      - id: e_ok_end
+        source: sv_ok:success
+        target: conv_loop_end
+      - id: e_retry_end
+        source: sv_retry:success
+        target: conv_loop_end
+      - id: e_loop_verdict
+        source: conv_loop:done
+        target: verdict
+      - id: e_loop_giveup
+        source: conv_loop:max_iterations
+        target: not_converged
+      - id: e_verdict_first
+        source: verdict:case:c_first
+        target: done_first
+      - id: e_verdict_retry
+        source: verdict:else
+        target: done_retry
+    interface_graph:
+      nodes:
+      - id: sec_targets
+        kind: section
+        position_x: 80
+        position_y: 80
+        width: 480
+        height: 180
+        data:
+          label: Target routers
+          runtime_layout: card
+          collapsible: false
+      - id: f_targets
+        kind: field
+        parent_id: sec_targets
+        position_x: 40
+        position_y: 60
+        data:
+          label: Routers
+          field_id: targets
+          field_type: inventory.device
+          required: true
+          description: Routers whose OSPF adjacencies must all be Full — the core fabric, preselected.
+          default_value:
+          - dc1-core-01
+          - dc1-core-02
+          - dc2-core-01
+          - dc2-core-02
+          config:
+            role: converge_targets
+            multiple: true
+            option_source:
+              kind: inventory.devices
+      edges: []
+- name: 'Net: Per-prefix route audit'
+  description: For each prefix chosen on the launch form, run "show ip route <prefix>" on the selected routers, record the
+    output as evidence, and assert the route is actually present — one loop iteration (and one StepRun) per prefix, with audited/missing
+    counts kept in run.vars. The loop collects each audited prefix and a branch after the loop reports success only when nothing
+    was missing. Demonstrates the for-each loop, loop.item templating, collect, and a post-loop verdict branch.
+  definition:
+    graph:
+      nodes:
+      - id: start
+        name: Start
+        type: start
+        position_x: 0
+        position_y: 280
+      - id: sv_zero
+        name: Reset audit counters
+        type: set_vars
+        position_x: 200
+        position_y: 280
+        assignments:
+        - name: audited
+          expr: '0'
+        - name: missing
+          expr: '0'
+      - id: prefix_loop
+        name: For each prefix
+        type: loop
+        loop_mode: for_each
+        items_expr: inputs.check_prefixes
+        collect: loop.item
+        position_x: 620
+        position_y: 60
+        width: 1260
+        height: 460
+      - id: check_route
+        name: Per-prefix route lookup
+        type: step
+        kind: CHECK
+        phase: VERIFY
+        handler: netcli.collect_evidence
+        scope_id: prefix_loop
+        position_x: 60
+        position_y: 100
+        target_selectors:
+        - type: role
+          role: audit_targets
+        params:
+          commands:
+          - show ip route {{ loop.item }}
+        policy:
+          timeout_sec: 120
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: true
+      - id: route_ok
+        name: Route present?
+        type: step
+        kind: CHECK
+        phase: VERIFY
+        handler: evidence.assert
+        scope_id: prefix_loop
+        position_x: 440
+        position_y: 100
+        params:
+          artifact_step_id: check_route
+          target_role: audit_targets
+          command: show ip route {{ loop.item }}
+          operator: contains
+          expected: '{{ loop.item }}'
+          match_scope: lines
+          line_filter: '^Routing entry for '
+          min_lines: 1
+          message: A router has no routing entry for {{ loop.item }}.
+        policy:
+          timeout_sec: 60
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: false
+      - id: sv_found
+        name: Count audited
+        type: set_vars
+        scope_id: prefix_loop
+        position_x: 820
+        position_y: 60
+        assignments:
+        - name: audited
+          expr: (run.vars.audited | default(0) | int) + 1
+      - id: sv_gap
+        name: Count missing
+        type: set_vars
+        scope_id: prefix_loop
+        position_x: 820
+        position_y: 260
+        assignments:
+        - name: audited
+          expr: (run.vars.audited | default(0) | int) + 1
+        - name: missing
+          expr: (run.vars.missing | default(0) | int) + 1
+      - id: prefix_loop_end
+        name: Loop End
+        type: loop_end
+        loop_ref: prefix_loop
+        scope_id: prefix_loop
+        position_x: 1182
+        position_y: 426
+      - id: audit_verdict
+        name: Any prefix missing?
+        type: branch
+        branch_mode: rules
+        position_x: 2000
+        position_y: 260
+        cases:
+        - id: c_clean
+          label: All prefixes present
+          when: (run.vars.missing | default(0) | int) == 0 and (run.vars.audited | default(0) | int) > 0
+      - id: audit_done
+        name: All prefixes present
+        type: terminal
+        terminal_status: success
+        position_x: 2360
+        position_y: 160
+      - id: audit_gaps
+        name: Prefixes missing
+        type: terminal
+        terminal_status: failure
+        position_x: 2360
+        position_y: 340
+      edges:
+      - id: e_start_zero
+        source: start:start
+        target: sv_zero
+      - id: e_zero_loop
+        source: sv_zero:success
+        target: prefix_loop
+      - id: e_loop_check
+        source: prefix_loop:iterate
+        target: check_route
+      - id: e_check_assert
+        source: check_route:success
+        target: route_ok
+      - id: e_check_gap
+        source: check_route:failure
+        target: sv_gap
+      - id: e_assert_found
+        source: route_ok:success
+        target: sv_found
+      - id: e_assert_gap
+        source: route_ok:failure
+        target: sv_gap
+      - id: e_found_end
+        source: sv_found:success
+        target: prefix_loop_end
+      - id: e_gap_end
+        source: sv_gap:success
+        target: prefix_loop_end
+      - id: e_loop_verdict
+        source: prefix_loop:done
+        target: audit_verdict
+      - id: e_verdict_clean
+        source: audit_verdict:case:c_clean
+        target: audit_done
+      - id: e_verdict_gaps
+        source: audit_verdict:else
+        target: audit_gaps
+    interface_graph:
+      nodes:
+      - id: sec_targets
+        kind: section
+        position_x: 80
+        position_y: 80
+        width: 480
+        height: 180
+        data:
+          label: Target routers
+          runtime_layout: card
+          collapsible: false
+      - id: f_targets
+        kind: field
+        parent_id: sec_targets
+        position_x: 40
+        position_y: 60
+        data:
+          label: Routers
+          field_id: targets
+          field_type: inventory.device
+          required: true
+          description: Routers to audit the prefixes on — core routers preselected.
+          default_value:
+          - dc1-core-01
+          - dc2-core-01
+          config:
+            role: audit_targets
+            multiple: true
+            option_source:
+              kind: inventory.devices
+      - id: sec_prefixes
+        kind: section
+        position_x: 620
+        position_y: 80
+        width: 520
+        height: 220
+        data:
+          label: Prefixes
+          runtime_layout: card
+          collapsible: false
+      - id: f_prefixes
+        kind: field
+        parent_id: sec_prefixes
+        position_x: 40
+        position_y: 60
+        data:
+          label: Prefixes to audit
+          field_id: check_prefixes
+          field_type: core.multi_enum
+          required: true
+          default_value:
+          - 10.101.1.0/24
+          - 10.104.1.0/24
+          - 10.255.255.1/32
+          description: One loop iteration audits each selected prefix.
+          config:
+            multiple: true
+            option_source:
+              kind: core.static
+              static_options:
+              - value: 10.101.1.0/24
+                label: Lab DC1 endpoint LAN
+              - value: 10.104.1.0/24
+                label: Lab DC2 endpoint LAN
+              - value: 10.102.1.0/24
+                label: Lab Branch 1 endpoint LAN
+              - value: 10.103.1.0/24
+                label: Lab Branch 2 endpoint LAN
+              - value: 10.255.255.1/32
+                label: dc1-core-01 loopback
+              - value: 10.255.255.9/32
+                label: dc2-core-01 loopback
+      edges: []
+- name: 'IaC: Ansible server baseline rollout'
+  description: Roll the golden server baseline across the lab's Linux hosts one host at a time with Ansible (SSH + become,
+    standards resolved from org variables). A failing host halts the rollout immediately via the loop's break edge — run variables
+    record the host being processed and how many completed — and a report step summarizes the hosts the loop collected.
+  definition:
+    graph:
+      nodes:
+      - id: start
+        name: Start
+        type: start
+        position_x: 0
+        position_y: 240
+      - id: sv_init
+        name: Init rollout state
+        type: set_vars
+        position_x: 200
+        position_y: 240
+        assignments:
+        - name: rolled_out
+          expr: '0'
+        - name: current_host
+          expr: ''''''
+      - id: rollout
+        name: For each server
+        type: loop
+        loop_mode: for_each
+        items_expr: targets.baseline_targets | map(attribute='name') | list
+        max_iterations: 16
+        collect: loop.item
+        position_x: 600
+        position_y: 80
+        width: 1280
+        height: 340
+      - id: sv_mark
+        name: Mark current host
+        type: set_vars
+        scope_id: rollout
+        position_x: 60
+        position_y: 100
+        assignments:
+        - name: current_host
+          expr: loop.item
+      - id: apply_baseline
+        name: Apply server baseline
+        type: step
+        kind: EXECUTE
+        phase: IMPLEMENTATION
+        handler: container.run
+        scope_id: rollout
+        position_x: 460
+        position_y: 100
+        mounted_files:
+        - hosts.ini
+        - baseline.yml
+        - rolling.sh
+        params:
+          image: alpine:3.22
+          working_dir: /workspace
+          network_mode: host
+          timeout_seconds: 300
+          command:
+          - sh /attachments/rolling.sh
+          env:
+            TARGET_HOST: '{{ loop.item }}'
+            LAB_USER: '{{ secret(''vault://orgs/default/secrets/meridian/lab/ssh/username'') }}'
+            LAB_PASSWORD: '{{ secret(''vault://orgs/default/secrets/meridian/lab/ssh/password'') }}'
+            TENANT_NAME: '{{ vars.TENANT_NAME }}'
+            NTP_PRIMARY: '{{ vars.NTP_PRIMARY }}'
+            DNS_PRIMARY: '{{ vars.DNS_PRIMARY }}'
+            SYSLOG_PRIMARY: '{{ vars.SYSLOG_PRIMARY }}'
+        policy:
+          timeout_sec: 330
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: false
+      - id: sv_ok
+        name: Count host done
+        type: set_vars
+        scope_id: rollout
+        position_x: 840
+        position_y: 100
+        assignments:
+        - name: rolled_out
+          expr: (run.vars.rolled_out | default(0) | int) + 1
+      - id: rollout_end
+        name: Loop End
+        type: loop_end
+        loop_ref: rollout
+        scope_id: rollout
+        position_x: 1202
+        position_y: 306
+      - id: report
+        name: Rollout report
+        type: step
+        kind: EXECUTE
+        phase: VERIFY
+        handler: container.run
+        position_x: 2000
+        position_y: 200
+        params:
+          image: alpine:3.22
+          working_dir: /workspace
+          timeout_seconds: 60
+          command:
+          - "mkdir -p /artifacts/new\n{\n  echo \"Ansible server baseline rollout\"\n  echo \"Hosts baselined (${COUNT}):\
+            \ ${BASELINED}\"\n} | tee /artifacts/new/rollout-report.txt\n"
+          env:
+            BASELINED: '{{ steps.rollout.output.results | join('', '') }}'
+            COUNT: '{{ run.vars.rolled_out | default(0) }}'
+        policy:
+          timeout_sec: 90
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: false
+      - id: ok
+        name: Rollout complete
+        type: terminal
+        terminal_status: success
+        position_x: 2420
+        position_y: 210
+      - id: halted
+        name: Rollout halted
+        type: terminal
+        terminal_status: failure
+        position_x: 2000
+        position_y: 480
+      edges:
+      - id: e_start_init
+        source: start:start
+        target: sv_init
+      - id: e_init_rollout
+        source: sv_init:success
+        target: rollout
+      - id: e_rollout_mark
+        source: rollout:iterate
+        target: sv_mark
+      - id: e_mark_apply
+        source: sv_mark:success
+        target: apply_baseline
+      - id: e_apply_ok
+        source: apply_baseline:success
+        target: sv_ok
+      - id: e_ok_end
+        source: sv_ok:success
+        target: rollout_end
+      - id: e_apply_halt
+        source: apply_baseline:failure
+        target: halted
+      - id: e_rollout_report
+        source: rollout:done
+        target: report
+      - id: e_rollout_max
+        source: rollout:max_iterations
+        target: halted
+      - id: e_report_ok
+        source: report:success
+        target: ok
+      - id: e_report_failed
+        source: report:failure
+        target: halted
+    interface_graph:
+      nodes:
+      - id: sec_targets
+        kind: section
+        position_x: 80
+        position_y: 80
+        width: 520
+        height: 200
+        data:
+          label: Servers
+          runtime_layout: card
+          collapsible: false
+      - id: f_hosts
+        kind: field
+        parent_id: sec_targets
+        position_x: 40
+        position_y: 60
+        data:
+          label: Servers to baseline
+          field_id: baseline_hosts
+          field_type: inventory.device
+          required: true
+          description: Lab Linux servers, baselined strictly in this order — the rollout stops at the first failure.
+          default_value:
+          - dc1-srv-01
+          - dc2-srv-01
+          - br1-srv-01
+          - br2-srv-01
+          config:
+            role: baseline_targets
+            multiple: true
+            option_source:
+              kind: inventory.devices
+      edges: []
+- name: 'IaC: Terraform router service'
+  description: 'Declare a routed service loopback in Terraform (offline, builtin resources, state in the run''s shared workspace),
+    then switch on the requested action: plan-only stops after the reviewable plan artifact, apply is approval-gated and followed
+    by a -detailed-exitcode convergence check before netcli pushes the declared config to the routers and asserts the post-change
+    evidence.'
+  definition:
+    graph:
+      nodes:
+      - id: start
+        name: Start
+        type: start
+        position_x: 0
+        position_y: 280
+      - id: plan
+        name: terraform plan
+        type: step
+        kind: CHECK
+        phase: PREPARE
+        handler: container.run
+        execution_affinity: shared
+        position_x: 200
+        position_y: 280
+        mounted_files:
+        - service.tf
+        - plan.sh
+        params:
+          image: hashicorp/terraform:1.9
+          entrypoint: /bin/sh
+          working_dir: /workspace
+          timeout_seconds: 240
+          command:
+          - sh /attachments/plan.sh
+          env:
+            TF_VAR_service_name: '{{ inputs.service_name }}'
+            TF_VAR_service_prefix: '{{ inputs.service_prefix }}'
+            TF_VAR_routers: '{{ targets.tf_targets | map(attribute=''name'') | list | tojson }}'
+        policy:
+          timeout_sec: 300
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: false
+      - id: route
+        name: Requested action?
+        type: branch
+        branch_mode: value
+        value_expr: inputs.tf_action
+        position_x: 620
+        position_y: 270
+        cases:
+        - id: c_plan
+          label: Plan only
+          equals: plan
+        - id: c_apply
+          label: Plan and apply
+          equals: apply
+      - id: plan_done
+        name: Plan reviewed
+        type: terminal
+        terminal_status: success
+        position_x: 970
+        position_y: 80
+      - id: gate
+        name: Approve apply
+        type: approval
+        phase: IMPLEMENTATION
+        position_x: 970
+        position_y: 270
+        params:
+          title: Approve Terraform apply
+          message: Review the terraform-plan.txt artifact on the plan step, then approve to apply the saved plan and push
+            the declared service loopback to the selected routers.
+          timeout_seconds: 3600
+        policy:
+          timeout_sec: 3600
+          retries: 0
+          on_failure: FAIL_RUN
+          evidence_required: false
+      - id: apply
+        name: terraform apply
+        type: step
+        kind: ACTION
+        phase: IMPLEMENTATION
+        handler: container.run
+        execution_affinity: shared
+        position_x: 1440
+        position_y: 270
+        mounted_files:
+        - apply.sh
+        params:
+          image: hashicorp/terraform:1.9
+          entrypoint: /bin/sh
+          working_dir: /workspace
+          timeout_seconds: 240
+          command:
+          - sh /attachments/apply.sh
+        policy:
+          timeout_sec: 300
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: false
+      - id: tf_verify
+        name: Convergence check
+        type: step
+        kind: CHECK
+        phase: VERIFY
+        handler: container.run
+        execution_affinity: shared
+        position_x: 1860
+        position_y: 270
+        mounted_files:
+        - verify.sh
+        params:
+          image: hashicorp/terraform:1.9
+          entrypoint: /bin/sh
+          working_dir: /workspace
+          timeout_seconds: 240
+          command:
+          - sh /attachments/verify.sh
+          env:
+            TF_VAR_service_name: '{{ inputs.service_name }}'
+            TF_VAR_service_prefix: '{{ inputs.service_prefix }}'
+            TF_VAR_routers: '{{ targets.tf_targets | map(attribute=''name'') | list | tojson }}'
+        policy:
+          timeout_sec: 300
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: false
+      - id: push
+        name: Push config to routers
+        type: step
+        kind: ACTION
+        phase: IMPLEMENTATION
+        handler: netcli.execute
+        position_x: 2280
+        position_y: 270
+        target_selectors:
+        - type: role
+          role: tf_targets
+        params:
+          commands:
+          - configure terminal
+          - interface lo
+          - description svc {{ inputs.service_name }} managed-by-terraform
+          - ip address {{ inputs.service_prefix }}/32
+          - end
+        policy:
+          timeout_sec: 120
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: false
+      - id: postcheck
+        name: Post-change evidence
+        type: step
+        kind: CHECK
+        phase: VERIFY
+        handler: netcli.collect_evidence
+        position_x: 2700
+        position_y: 270
+        target_selectors:
+        - type: role
+          role: tf_targets
+        params:
+          commands:
+          - show running-config
+        policy:
+          timeout_sec: 120
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: true
+      - id: confirm
+        name: Declared config present?
+        type: step
+        kind: CHECK
+        phase: VERIFY
+        handler: evidence.assert
+        position_x: 3120
+        position_y: 270
+        params:
+          artifact_step_id: postcheck
+          target_role: tf_targets
+          command: show running-config
+          operator: contains
+          expected: managed-by-terraform
+          match_scope: lines
+          line_filter: 'description svc {{ inputs.service_name }} '
+          min_lines: 1
+          message: A target router does not carry the declared service loopback.
+        policy:
+          timeout_sec: 60
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: false
+      - id: done
+        name: Service deployed
+        type: terminal
+        terminal_status: success
+        position_x: 3540
+        position_y: 180
+      - id: failed
+        name: Deployment failed
+        type: terminal
+        terminal_status: failure
+        position_x: 1700
+        position_y: 600
+      edges:
+      - id: e_start_plan
+        source: start:start
+        target: plan
+      - id: e_plan_route
+        source: plan:success
+        target: route
+      - id: e_plan_failed
+        source: plan:failure
+        target: failed
+      - id: e_route_plan_only
+        source: route:case:c_plan
+        target: plan_done
+      - id: e_route_apply
+        source: route:case:c_apply
+        target: gate
+      - id: e_route_else
+        source: route:else
+        target: failed
+      - id: e_route_error
+        source: route:error
+        target: failed
+      - id: e_gate_apply
+        source: gate:approved
+        target: apply
+      - id: e_gate_rejected
+        source: gate:rejected
+        target: failed
+      - id: e_gate_expired
+        source: gate:expired
+        target: failed
+      - id: e_apply_verify
+        source: apply:success
+        target: tf_verify
+      - id: e_apply_failed
+        source: apply:failure
+        target: failed
+      - id: e_verify_push
+        source: tf_verify:success
+        target: push
+      - id: e_verify_failed
+        source: tf_verify:failure
+        target: failed
+      - id: e_push_postcheck
+        source: push:success
+        target: postcheck
+      - id: e_push_failed
+        source: push:failure
+        target: failed
+      - id: e_postcheck_confirm
+        source: postcheck:success
+        target: confirm
+      - id: e_postcheck_failed
+        source: postcheck:failure
+        target: failed
+      - id: e_confirm_done
+        source: confirm:success
+        target: done
+      - id: e_confirm_failed
+        source: confirm:failure
+        target: failed
+    interface_graph:
+      nodes:
+      - id: sec_action
+        kind: section
+        position_x: 80
+        position_y: 80
+        width: 440
+        height: 180
+        data:
+          label: Action
+          runtime_layout: card
+          collapsible: false
+      - id: f_action
+        kind: field
+        parent_id: sec_action
+        position_x: 40
+        position_y: 60
+        data:
+          label: Terraform action
+          field_id: tf_action
+          field_type: core.enum
+          required: true
+          default_value: plan
+          description: Plan-only stops after the reviewable plan artifact.
+          config:
+            option_source:
+              kind: core.static
+              static_options:
+              - value: plan
+                label: Plan only
+              - value: apply
+                label: Plan and apply (approval-gated)
+      - id: sec_service
+        kind: section
+        position_x: 560
+        position_y: 80
+        width: 520
+        height: 220
+        data:
+          label: Service
+          runtime_layout: card
+          collapsible: false
+      - id: f_service_name
+        kind: field
+        parent_id: sec_service
+        position_x: 40
+        position_y: 60
+        data:
+          label: Service name
+          field_id: service_name
+          field_type: core.text
+          required: true
+          default_value: telemetry
+          description: Short identifier stamped into the interface description.
+          config:
+            validations:
+              combinator: AND
+              children:
+              - id: v_name
+                op: regex
+                operand:
+                  kind: value
+                  value: ^[a-z][a-z0-9-]{1,20}$
+      - id: f_service_prefix
+        kind: field
+        parent_id: sec_service
+        position_x: 300
+        position_y: 60
+        data:
+          label: Service address
+          field_id: service_prefix
+          field_type: core.text
+          required: true
+          default_value: 10.210.10.1
+          description: Host address for the service loopback (pushed as a /32).
+          config:
+            validations:
+              combinator: AND
+              children:
+              - id: v_prefix
+                op: regex
+                operand:
+                  kind: value
+                  value: ^10\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$
+      - id: sec_targets
+        kind: section
+        position_x: 1140
+        position_y: 80
+        width: 480
+        height: 180
+        data:
+          label: Target routers
+          runtime_layout: card
+          collapsible: false
+      - id: f_targets
+        kind: field
+        parent_id: sec_targets
+        position_x: 40
+        position_y: 60
+        data:
+          label: Routers
+          field_id: tf_targets
+          field_type: inventory.device
+          required: true
+          description: Routers that must carry the service loopback.
+          default_value:
+          - dc1-core-01
+          - dc2-core-01
+          config:
+            role: tf_targets
+            multiple: true
+            option_source:
+              kind: inventory.devices
+      edges: []
+- name: 'IaC: Ansible router drift remediation'
+  description: Audit the selected FRR routers for the golden loopback description and, while any router drifts, remediate
+    with an Ansible raw/vtysh playbook — re-auditing each pass until the fleet converges or the loop's iteration cap routes
+    to a manual-intervention terminal. Run variables count the passes and record the verdict.
+  definition:
+    graph:
+      nodes:
+      - id: start
+        name: Start
+        type: start
+        position_x: 0
+        position_y: 280
+      - id: sv_init
+        name: Init audit state
+        type: set_vars
+        position_x: 200
+        position_y: 280
+        assignments:
+        - name: compliant
+          expr: 'false'
+        - name: passes
+          expr: '0'
+      - id: fix_loop
+        name: Until compliant
+        type: loop
+        loop_mode: while
+        condition: not (run.vars.compliant | default(false))
+        max_iterations: 3
+        position_x: 620
+        position_y: 60
+        width: 1640
+        height: 460
+      - id: audit
+        name: Audit running config
+        type: step
+        kind: CHECK
+        phase: VERIFY
+        handler: netcli.collect_evidence
+        scope_id: fix_loop
+        position_x: 60
+        position_y: 100
+        target_selectors:
+        - type: role
+          role: drift_targets
+        params:
+          commands:
+          - show running-config
+        policy:
+          timeout_sec: 120
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: true
+      - id: check
+        name: Golden description present?
+        type: step
+        kind: CHECK
+        phase: VERIFY
+        handler: evidence.assert
+        scope_id: fix_loop
+        position_x: 440
+        position_y: 100
+        params:
+          artifact_step_id: audit
+          target_role: drift_targets
+          command: show running-config
+          operator: contains
+          expected: managed by Meridian NetOps
+          message: At least one router lacks the golden loopback description.
+        policy:
+          timeout_sec: 60
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: false
+      - id: sv_done
+        name: Mark compliant
+        type: set_vars
+        scope_id: fix_loop
+        position_x: 820
+        position_y: 60
+        assignments:
+        - name: compliant
+          expr: 'true'
+        - name: passes
+          expr: (run.vars.passes | default(0) | int) + 1
+      - id: remediate
+        name: Ansible remediation
+        type: step
+        kind: EXECUTE
+        phase: IMPLEMENTATION
+        handler: container.run
+        scope_id: fix_loop
+        position_x: 820
+        position_y: 260
+        mounted_files:
+        - routers.ini
+        - remediate.yml
+        - remediate.sh
+        params:
+          image: alpine:3.22
+          working_dir: /workspace
+          network_mode: host
+          timeout_seconds: 300
+          command:
+          - sh /attachments/remediate.sh
+          env:
+            LIMIT_HOSTS: '{{ targets.drift_targets | map(attribute=''name'') | join('','') }}'
+            LAB_USER: '{{ secret(''vault://orgs/default/secrets/meridian/lab/ssh/username'') }}'
+            LAB_PASSWORD: '{{ secret(''vault://orgs/default/secrets/meridian/lab/ssh/password'') }}'
+        policy:
+          timeout_sec: 330
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: false
+      - id: sv_retry
+        name: Mark drifting
+        type: set_vars
+        scope_id: fix_loop
+        position_x: 1200
+        position_y: 260
+        assignments:
+        - name: compliant
+          expr: 'false'
+        - name: passes
+          expr: (run.vars.passes | default(0) | int) + 1
+      - id: fix_end
+        name: Loop End
+        type: loop_end
+        loop_ref: fix_loop
+        scope_id: fix_loop
+        position_x: 1562
+        position_y: 426
+      - id: converged
+        name: Fleet compliant
+        type: terminal
+        terminal_status: success
+        position_x: 2380
+        position_y: 240
+      - id: manual
+        name: Manual intervention required
+        type: terminal
+        terminal_status: failure
+        position_x: 2380
+        position_y: 440
+      edges:
+      - id: e_start_init
+        source: start:start
+        target: sv_init
+      - id: e_init_loop
+        source: sv_init:success
+        target: fix_loop
+      - id: e_loop_audit
+        source: fix_loop:iterate
+        target: audit
+      - id: e_audit_check
+        source: audit:success
+        target: check
+      - id: e_audit_retry
+        source: audit:failure
+        target: sv_retry
+      - id: e_check_done
+        source: check:success
+        target: sv_done
+      - id: e_check_remediate
+        source: check:failure
+        target: remediate
+      - id: e_remediate_retry
+        source: remediate:success
+        target: sv_retry
+      - id: e_remediate_failed
+        source: remediate:failure
+        target: sv_retry
+      - id: e_done_end
+        source: sv_done:success
+        target: fix_end
+      - id: e_retry_end
+        source: sv_retry:success
+        target: fix_end
+      - id: e_loop_converged
+        source: fix_loop:done
+        target: converged
+      - id: e_loop_manual
+        source: fix_loop:max_iterations
+        target: manual
+    interface_graph:
+      nodes:
+      - id: sec_targets
+        kind: section
+        position_x: 80
+        position_y: 80
+        width: 520
+        height: 200
+        data:
+          label: Routers
+          runtime_layout: card
+          collapsible: false
+      - id: f_targets
+        kind: field
+        parent_id: sec_targets
+        position_x: 40
+        position_y: 60
+        data:
+          label: Routers to audit
+          field_id: drift_targets
+          field_type: inventory.device
+          required: true
+          description: FRR routers audited for the golden loopback description. Preselects the cores the Terraform demo does
+            NOT manage — both demos stamp the same "interface lo" description, so overlapping targets would overwrite each
+            other's assertions. Remediation is limited to this selection.
+          default_value:
+          - dc1-core-02
+          - dc2-core-02
+          config:
+            role: drift_targets
+            multiple: true
+            option_source:
+              kind: inventory.devices
+      edges: []
 flow_attachments:
 - flow: 'Lab: Provision and tear down demo datacenter'
   filename: Dockerfile
@@ -1719,15 +2981,19 @@ flow_attachments:
   content: "# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>\n# SPDX-License-Identifier: AGPL-3.0-or-later\n\
     #\n# Lightweight Linux endpoint for the Meridian lab: an Alpine host with sshd so\n# Hegemony's shell.execute handler\
     \ can log in like to any server, plus\n# iproute2/iputils for end-to-end reachability tests across the routed fabric.\n\
-    # ping gets cap_net_raw so the non-root login can run it.\n#\n# Built locally by \"Lab: Provision and tear down demo datacenter\"\
-    \ and\n# referenced from topology.clab.yml as image \"meridian/lab-host:latest\".\nFROM alpine:3.22\n\n# The login password\
-    \ is injected at build time from the meridian-lab-ssh vault\n# secret (same credential the git inventory provider hands\
-    \ to the routers).\nARG LAB_PASSWORD=demo-lab-password\n\nRUN apk add --no-cache openssh iproute2 iputils libcap-utils\
-    \ \\\n    && ssh-keygen -A \\\n    && sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config\
-    \ \\\n    && sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config \\\n    && adduser -D -s /bin/sh\
-    \ clab \\\n    && echo \"clab:${LAB_PASSWORD}\" | chpasswd \\\n    && setcap cap_net_raw+ep \"$(command -v ping)\"\n\n\
-    COPY entrypoint.sh /usr/local/bin/host-entrypoint.sh\nRUN chmod +x /usr/local/bin/host-entrypoint.sh\n\nENTRYPOINT [\"\
-    /usr/local/bin/host-entrypoint.sh\"]\n"
+    # ping gets cap_net_raw so the non-root login can run it.\n#\n# python3 + password-gated sudo make the host a first-class\
+    \ Ansible managed\n# node for the \"IaC: Ansible server baseline rollout\" flow: ansible modules\n# need a python interpreter\
+    \ on the target, and the baseline playbook escalates\n# with become (using the vault-sourced login password) to write\
+    \ under /etc —\n# the same shape as a real server fleet's automation account.\n#\n# Built locally by \"Lab: Provision\
+    \ and tear down demo datacenter\" and\n# referenced from topology.clab.yml as image \"meridian/lab-host:latest\".\nFROM\
+    \ alpine:3.22\n\n# The login password is injected at build time from the meridian-lab-ssh vault\n# secret (same credential\
+    \ the git inventory provider hands to the routers).\nARG LAB_PASSWORD=demo-lab-password\n\nRUN apk add --no-cache openssh\
+    \ iproute2 iputils libcap-utils python3 sudo \\\n    && ssh-keygen -A \\\n    && sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication\
+    \ yes/' /etc/ssh/sshd_config \\\n    && sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config \\\n\
+    \    && adduser -D -s /bin/sh clab \\\n    && echo \"clab:${LAB_PASSWORD}\" | chpasswd \\\n    && echo \"clab ALL=(ALL)\
+    \ ALL\" > /etc/sudoers.d/clab \\\n    && chmod 0440 /etc/sudoers.d/clab \\\n    && setcap cap_net_raw+ep \"$(command -v\
+    \ ping)\"\n\nCOPY entrypoint.sh /usr/local/bin/host-entrypoint.sh\nRUN chmod +x /usr/local/bin/host-entrypoint.sh\n\n\
+    ENTRYPOINT [\"/usr/local/bin/host-entrypoint.sh\"]\n"
 - flow: 'Lab: Provision and tear down demo datacenter'
   filename: host/entrypoint.sh
   content: '#!/bin/sh
@@ -2054,6 +3320,300 @@ flow_attachments:
     \necho \"  flow-backups and platform-backups are writable by Hegemony out of the box:\"\necho \"  the ${GIT_USER} service\
     \ account authenticates with the meridian-gitea-token\"\necho \"  secret as its password. Nothing secret is minted or\
     \ printed here.\"\n"
+- flow: 'IaC: Ansible server baseline rollout'
+  filename: hosts.ini
+  content: '# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
+
+    # SPDX-License-Identifier: AGPL-3.0-or-later
+
+    #
+
+    # Static Ansible inventory for the lab''s Linux endpoint hosts — the classic
+
+    # checked-into-git inventory file. Addresses are the fixed containerlab
+
+    # management IPs (topology.clab.yml); credentials are NOT stored here — the
+
+    # flow injects them from the meridian-lab-ssh vault secret as extra vars.
+
+    [lab_servers]
+
+    dc1-srv-01 ansible_host=172.20.30.15
+
+    dc2-srv-01 ansible_host=172.20.30.44
+
+    br1-srv-01 ansible_host=172.20.30.23
+
+    br2-srv-01 ansible_host=172.20.30.33
+
+
+    [lab_servers:vars]
+
+    ansible_connection=ssh
+
+    # accept-new pins each host key on first contact and rejects a mid-run change.
+
+    # The known-hosts file lives in the throwaway rollout container''s /tmp, so it
+
+    # is fresh every run — regenerated lab host keys never conflict across deploys.
+
+    ansible_ssh_common_args=-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/lab-known-hosts
+
+    '
+- flow: 'IaC: Ansible server baseline rollout'
+  filename: baseline.yml
+  content: "# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier: AGPL-3.0-or-later\n\
+    #\n# Server baseline playbook applied host-by-host by the \"IaC: Ansible server\n# baseline rollout\" flow (one loop iteration\
+    \ = one host via --limit). Ordinary\n# config management: escalate with become, stamp the org's golden standards\n# (resolved\
+    \ by the flow from {{ vars.* }} and passed as environment variables)\n# into /etc, and leave a login banner — all idempotent,\
+    \ so re-runs report ok.\n- name: Meridian server baseline\n  hosts: all\n  become: true\n  gather_facts: true\n  vars:\n\
+    \    tenant: \"{{ lookup('env', 'TENANT_NAME') | default('Meridian', true) }}\"\n    ntp: \"{{ lookup('env', 'NTP_PRIMARY')\
+    \ | default('', true) }}\"\n    dns: \"{{ lookup('env', 'DNS_PRIMARY') | default('', true) }}\"\n    syslog: \"{{ lookup('env',\
+    \ 'SYSLOG_PRIMARY') | default('', true) }}\"\n  tasks:\n    - name: Ensure the baseline directory exists\n      ansible.builtin.file:\n\
+    \        path: /etc/meridian\n        state: directory\n        mode: \"0755\"\n\n    - name: Render the golden-standards\
+    \ baseline file\n      ansible.builtin.copy:\n        dest: /etc/meridian/baseline.env\n        mode: \"0644\"\n     \
+    \   content: |\n          # Managed by Hegemony — IaC: Ansible server baseline rollout\n          TENANT={{ tenant }}\n\
+    \          NTP_PRIMARY={{ ntp }}\n          DNS_PRIMARY={{ dns }}\n          SYSLOG_PRIMARY={{ syslog }}\n\n    - name:\
+    \ Stamp the login banner\n      ansible.builtin.copy:\n        dest: /etc/motd\n        mode: \"0644\"\n        content:\
+    \ |\n          {{ tenant }} lab server {{ inventory_hostname }} — baseline managed by Ansible.\n          Golden standards:\
+    \ NTP {{ ntp | default('<unset>', true) }} / DNS {{ dns | default('<unset>', true) }} / syslog {{ syslog | default('<unset>',\
+    \ true) }}\n\n    - name: Verify the baseline landed\n      ansible.builtin.command: cat /etc/meridian/baseline.env\n\
+    \      register: baseline_check\n      changed_when: false\n\n    - name: Assert the baseline records every golden standard\n\
+    \      ansible.builtin.assert:\n        that:\n          # Non-empty first: a missing org variable renders \"NTP_PRIMARY=\"\
+    \n          # and the exact-line check below would vacuously match it.\n          - tenant | length > 0\n          - ntp\
+    \ | length > 0\n          - dns | length > 0\n          - syslog | length > 0\n          - \"('TENANT=' + tenant) in baseline_check.stdout_lines\"\
+    \n          - \"('NTP_PRIMARY=' + ntp) in baseline_check.stdout_lines\"\n          - \"('DNS_PRIMARY=' + dns) in baseline_check.stdout_lines\"\
+    \n          - \"('SYSLOG_PRIMARY=' + syslog) in baseline_check.stdout_lines\"\n        success_msg: \"Baseline present\
+    \ on {{ inventory_hostname }}.\"\n        fail_msg: \"Baseline on {{ inventory_hostname }} does not match the golden standards.\"\
+    \n"
+- flow: 'IaC: Ansible server baseline rollout'
+  filename: rolling.sh
+  content: "#!/bin/sh\n# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier:\
+    \ AGPL-3.0-or-later\n#\n# One rolling-rollout iteration: run the server baseline playbook against a\n# single host from\
+    \ the static inventory (--limit $TARGET_HOST — the flow's\n# loop passes {{ loop.item }}). Installs ansible-core + sshpass\
+    \ into the\n# throwaway alpine container; credentials arrive as environment variables\n# resolved from the meridian-lab-ssh\
+    \ vault secret and are handed to Ansible\n# as extra vars so they never land in the inventory file or argv of sshpass.\n\
+    #\n# The playbook's exit code is captured explicitly (not piped through tee) —\n# it must reach the step verbatim: a failing\
+    \ host is what trips the flow's\n# canary break edge and halts the rollout.\nset -eu\n\n: \"${TARGET_HOST:?TARGET_HOST\
+    \ is required (the host to baseline)}\"\n: \"${LAB_USER:?LAB_USER is required}\"\n: \"${LAB_PASSWORD:?LAB_PASSWORD is\
+    \ required}\"\n\napk add --no-cache ansible-core sshpass openssh-client >/dev/null\nmkdir -p /artifacts/new\n\nEXTRA_VARS=$(mktemp)\n\
+    trap 'rm -f \"${EXTRA_VARS}\"' EXIT\n# JSON is valid YAML and json.dump escapes anything a credential can\n# contain —\
+    \ quotes or newlines in the secret cannot corrupt the vars file.\npython3 - \"${EXTRA_VARS}\" <<'PY'\nimport json\nimport\
+    \ os\nimport sys\n\nwith open(sys.argv[1], \"w\") as handle:\n    json.dump(\n        {\n            \"ansible_user\"\
+    : os.environ[\"LAB_USER\"],\n            \"ansible_password\": os.environ[\"LAB_PASSWORD\"],\n            \"ansible_become_password\"\
+    : os.environ[\"LAB_PASSWORD\"],\n        },\n        handle,\n    )\nPY\n\necho \"Applying server baseline to ${TARGET_HOST}\
+    \ ...\"\nLOG=\"/artifacts/new/baseline-${TARGET_HOST}.txt\"\nrc=0\nansible-playbook \\\n  -i /attachments/hosts.ini \\\
+    \n  --limit \"${TARGET_HOST}\" \\\n  -e \"@${EXTRA_VARS}\" \\\n  /attachments/baseline.yml >\"${LOG}\" 2>&1 || rc=$?\n\
+    cat \"${LOG}\"\nexit \"${rc}\"\n"
+- flow: 'IaC: Terraform router service'
+  filename: service.tf
+  content: "# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier: AGPL-3.0-or-later\n\
+    #\n# Desired state for a routed lab service, used by the \"IaC: Terraform router\n# service\" flow: one terraform_data\
+    \ resource per target router records the\n# service loopback each router must carry, and the rendered_config output\n\
+    # shows the equivalent vtysh command block (the flow's netcli push step\n# renders the same commands from its own inputs).\
+    \ Only the\n# builtin terraform_data resource is used, so init/plan/apply run fully\n# offline (no provider downloads)\
+    \ with local state kept in the run's /shared\n# workspace — plan genuinely diffs against the state apply wrote earlier\
+    \ in\n# the same run.\n\nvariable \"service_name\" {\n  type        = string\n  description = \"Short service identifier\
+    \ stamped into the interface description.\"\n}\n\nvariable \"service_prefix\" {\n  type        = string\n  description\
+    \ = \"Host address the service loopback advertises (pushed as a /32).\"\n}\n\nvariable \"routers\" {\n  type        =\
+    \ list(string)\n  description = \"Target routers that must carry the service loopback.\"\n}\n\nresource \"terraform_data\"\
+    \ \"router_service\" {\n  for_each = toset(var.routers)\n\n  input = {\n    router      = each.value\n    description\
+    \ = \"svc ${var.service_name} managed-by-terraform\"\n    address     = \"${var.service_prefix}/32\"\n  }\n}\n\noutput\
+    \ \"rendered_config\" {\n  description = \"Per-router vtysh command block equivalent to the desired state.\"\n  value\
+    \ = {\n    for router, desired in terraform_data.router_service : router => join(\"\\n\", [\n      \"interface lo\",\n\
+    \      \" description ${desired.input.description}\",\n      \" ip address ${desired.input.address}\",\n    ])\n  }\n\
+    }\n"
+- flow: 'IaC: Terraform router service'
+  filename: plan.sh
+  content: '#!/bin/sh
+
+    # SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
+
+    # SPDX-License-Identifier: AGPL-3.0-or-later
+
+    #
+
+    # Stage the router-service config into the run''s /shared workspace and run
+
+    # terraform init + plan there, saving the plan file for the apply step of the
+
+    # same run (every container step of a run sees the same /shared). The
+
+    # human-readable plan is captured as a run artifact for the approval gate''s
+
+    # reviewer. Inputs arrive as TF_VAR_* environment variables.
+
+    set -eu
+
+
+    WORKDIR=/shared/tf
+
+    mkdir -p "${WORKDIR}" /artifacts/new
+
+    cp /attachments/service.tf "${WORKDIR}/service.tf"
+
+    cd "${WORKDIR}"
+
+
+    terraform init -input=false -no-color
+
+    terraform plan -input=false -no-color -out=service.tfplan
+
+    terraform show -no-color service.tfplan >/artifacts/new/terraform-plan.txt
+
+    cat /artifacts/new/terraform-plan.txt
+
+    '
+- flow: 'IaC: Terraform router service'
+  filename: apply.sh
+  content: '#!/bin/sh
+
+    # SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
+
+    # SPDX-License-Identifier: AGPL-3.0-or-later
+
+    #
+
+    # Apply the exact plan the plan step saved into /shared earlier in this run —
+
+    # never a fresh plan, so what the approver reviewed is what executes. The
+
+    # resulting outputs (the per-router rendered config) land in the run
+
+    # artifacts next to the plan.
+
+    set -eu
+
+
+    WORKDIR=/shared/tf
+
+    cd "${WORKDIR}"
+
+    mkdir -p /artifacts/new
+
+
+    terraform apply -input=false -no-color service.tfplan
+
+    terraform output -no-color >/artifacts/new/terraform-outputs.txt
+
+    cat /artifacts/new/terraform-outputs.txt
+
+    '
+- flow: 'IaC: Terraform router service'
+  filename: verify.sh
+  content: "#!/bin/sh\n# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier:\
+    \ AGPL-3.0-or-later\n#\n# Post-apply convergence check: terraform plan -detailed-exitcode against the\n# state apply just\
+    \ wrote. Exit 0 = state matches the desired config (the step\n# succeeds); exit 2 = drift remains (surfaced as a step\
+    \ failure, routing the\n# flow to its failure terminal); exit 1 = plan error.\nset -eu\n\nWORKDIR=/shared/tf\ncd \"${WORKDIR}\"\
+    \nmkdir -p /artifacts/new\n\nrc=0\nterraform plan -input=false -no-color -detailed-exitcode \\\n  >/artifacts/new/terraform-verify.txt\
+    \ 2>&1 || rc=$?\ncat /artifacts/new/terraform-verify.txt\n\ncase \"${rc}\" in\n  0) echo \"Converged: state matches the\
+    \ desired configuration.\" ;;\n  2) echo \"Drift detected: the state does not match the desired configuration.\" >&2 ;;\n\
+    \  *) echo \"terraform plan failed (exit ${rc}).\" >&2 ;;\nesac\nexit \"${rc}\"\n"
+- flow: 'IaC: Ansible router drift remediation'
+  filename: routers.ini
+  content: '# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
+
+    # SPDX-License-Identifier: AGPL-3.0-or-later
+
+    #
+
+    # Static Ansible inventory for the lab''s FRR routers. Their SSH login shell IS
+
+    # vtysh (see src/files/lab/Dockerfile), so playbooks drive them with raw tasks
+
+    # only: each raw command string lands in `vtysh -c` — no python needed on the
+
+    # routers, the standard pattern for network gear. Credentials are injected by
+
+    # the flow from the meridian-lab-ssh vault secret as extra vars.
+
+    [core]
+
+    dc1-core-01 ansible_host=172.20.30.11
+
+    dc1-core-02 ansible_host=172.20.30.12
+
+    dc2-core-01 ansible_host=172.20.30.41
+
+    dc2-core-02 ansible_host=172.20.30.42
+
+
+    [edge]
+
+    br1-edge-01 ansible_host=172.20.30.21
+
+    br2-edge-01 ansible_host=172.20.30.31
+
+
+    [access]
+
+    dc1-acc-01 ansible_host=172.20.30.13
+
+    dc1-acc-02 ansible_host=172.20.30.14
+
+    dc2-acc-01 ansible_host=172.20.30.43
+
+    br1-acc-01 ansible_host=172.20.30.22
+
+    br2-acc-01 ansible_host=172.20.30.32
+
+
+    [routers:children]
+
+    core
+
+    edge
+
+    access
+
+
+    [routers:vars]
+
+    ansible_connection=ssh
+
+    # accept-new pins each host key on first contact and rejects a mid-run change.
+
+    # The known-hosts file lives in the throwaway remediation container''s /tmp, so
+
+    # it is fresh every run — regenerated lab host keys never conflict across
+
+    # deploys.
+
+    ansible_ssh_common_args=-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/lab-known-hosts
+
+    '
+- flow: 'IaC: Ansible router drift remediation'
+  filename: remediate.yml
+  content: "# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier: AGPL-3.0-or-later\n\
+    #\n# FRR router remediation playbook for the \"IaC: Ansible router drift\n# remediation\" flow. The routers' SSH login\
+    \ shell is vtysh, so every raw\n# command string is executed by `vtysh -c` on the router — the python-free\n# pattern\
+    \ real network fleets use. Embedded newlines in one raw block become\n# sequential vtysh commands, exactly like pasting\
+    \ into the CLI. The flow's\n# while-loop re-audits with netcli after this play and iterates until the\n# running config\
+    \ carries the golden loopback description.\n- name: Meridian router golden-config remediation\n  hosts: all\n  gather_facts:\
+    \ false\n  tasks:\n    - name: Stamp the golden loopback description\n      ansible.builtin.raw: |\n        configure\
+    \ terminal\n        interface lo\n        description managed by Meridian NetOps\n        end\n      changed_when: true\n\
+    \n    - name: Read back the running config\n      # This FRR build has no per-interface running-config filter — read the\n\
+    \      # whole config and assert on the marker line.\n      ansible.builtin.raw: |\n        show running-config\n    \
+    \  register: lo_config\n      changed_when: false\n\n    - name: Assert the description is present\n      ansible.builtin.assert:\n\
+    \        that:\n          - \"'managed by Meridian NetOps' in lo_config.stdout\"\n        success_msg: \"{{ inventory_hostname\
+    \ }} carries the golden description.\"\n        fail_msg: \"{{ inventory_hostname }} still lacks the golden description.\"\
+    \n"
+- flow: 'IaC: Ansible router drift remediation'
+  filename: remediate.sh
+  content: "#!/bin/sh\n# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier:\
+    \ AGPL-3.0-or-later\n#\n# One remediation pass: run the router remediation playbook against the\n# routers the launch\
+    \ form selected (--limit $LIMIT_HOSTS, a comma-separated\n# device-name list the flow renders from its inputs). Same container\
+    \ recipe\n# as rolling.sh; the exit code is captured explicitly so an unreachable or\n# still-drifting router fails the\
+    \ step and the flow's while-loop retries.\nset -eu\n\n: \"${LIMIT_HOSTS:?LIMIT_HOSTS is required (comma-separated router\
+    \ names)}\"\n: \"${LAB_USER:?LAB_USER is required}\"\n: \"${LAB_PASSWORD:?LAB_PASSWORD is required}\"\n\napk add --no-cache\
+    \ ansible-core sshpass openssh-client >/dev/null\nmkdir -p /artifacts/new\n\nEXTRA_VARS=$(mktemp)\ntrap 'rm -f \"${EXTRA_VARS}\"\
+    ' EXIT\n# JSON is valid YAML and json.dump escapes anything a credential can\n# contain — quotes or newlines in the secret\
+    \ cannot corrupt the vars file.\npython3 - \"${EXTRA_VARS}\" <<'PY'\nimport json\nimport os\nimport sys\n\nwith open(sys.argv[1],\
+    \ \"w\") as handle:\n    json.dump(\n        {\n            \"ansible_user\": os.environ[\"LAB_USER\"],\n            \"\
+    ansible_password\": os.environ[\"LAB_PASSWORD\"],\n        },\n        handle,\n    )\nPY\n\necho \"Remediating routers:\
+    \ ${LIMIT_HOSTS} ...\"\nLOG=\"/artifacts/new/remediation.txt\"\nrc=0\nansible-playbook \\\n  -i /attachments/routers.ini\
+    \ \\\n  --limit \"${LIMIT_HOSTS}\" \\\n  -e \"@${EXTRA_VARS}\" \\\n  /attachments/remediate.yml >\"${LOG}\" 2>&1 || rc=$?\n\
+    cat \"${LOG}\"\nexit \"${rc}\"\n"
 variables:
 - name: ORG_NAME
   value: Meridian Networks

@@ -32,15 +32,15 @@ flows:
             name: Start
             type: start
             position_x: 0
-            position_y: 120
+            position_y: 140
           - id: collect_configs
             name: Collect running configs
             type: step
             kind: CHECK
             phase: PREPARE
             handler: netcli.collect_evidence
-            position_x: 320
-            position_y: 120
+            position_x: 240
+            position_y: 140
             target_selectors:
               - type: role
                 role: backup_targets
@@ -58,8 +58,8 @@ flows:
             kind: EXECUTE
             phase: IMPLEMENTATION
             handler: container.run
-            position_x: 640
-            position_y: 120
+            position_x: 660
+            position_y: 140
             params:
               image: alpine/git:v2.45.2
               entrypoint: /bin/sh
@@ -125,14 +125,14 @@ flows:
             name: Backup complete
             type: terminal
             terminal_status: success
-            position_x: 960
-            position_y: 40
+            position_x: 1080
+            position_y: 60
           - id: failed
             name: Backup failed
             type: terminal
             terminal_status: failure
-            position_x: 960
-            position_y: 240
+            position_x: 1080
+            position_y: 260
         edges:
           - id: e_start_collect
             source: start:start
@@ -260,13 +260,13 @@ flows:
             name: Start
             type: start
             position_x: 0
-            position_y: 200
+            position_y: 220
           - id: approval
             name: Approve announcement
             type: approval
             phase: IMPLEMENTATION
-            position_x: 300
-            position_y: 200
+            position_x: 240
+            position_y: 210
             params:
               title: Approve service prefix announcement
               # Approval title/message are shown verbatim (no template
@@ -288,7 +288,7 @@ flows:
             kind: CHECK
             phase: PREPARE
             handler: netcli.collect_evidence
-            position_x: 600
+            position_x: 700
             position_y: 120
             target_selectors:
               - type: role
@@ -309,7 +309,7 @@ flows:
             kind: ACTION
             phase: IMPLEMENTATION
             handler: netcli.execute
-            position_x: 900
+            position_x: 1120
             position_y: 120
             target_selectors:
               - type: role
@@ -336,7 +336,7 @@ flows:
             kind: CHECK
             phase: VERIFY
             handler: netcli.collect_evidence
-            position_x: 1200
+            position_x: 1540
             position_y: 120
             target_selectors:
               - type: role
@@ -357,7 +357,7 @@ flows:
             kind: CHECK
             phase: VERIFY
             handler: evidence.compare
-            position_x: 1500
+            position_x: 1960
             position_y: 120
             params:
               precheck_step_id: precheck
@@ -383,14 +383,14 @@ flows:
             name: Announcement complete
             type: terminal
             terminal_status: success
-            position_x: 1800
-            position_y: 40
+            position_x: 2380
+            position_y: 100
           - id: failed
             name: Announcement failed
             type: terminal
             terminal_status: failure
-            position_x: 1800
-            position_y: 360
+            position_x: 1400
+            position_y: 440
         edges:
           - id: e_start_approval
             source: start:start
@@ -637,15 +637,15 @@ flows:
             name: Start
             type: start
             position_x: 0
-            position_y: 120
+            position_y: 140
           - id: reachable
             name: Reachability probe (TCP/22)
             type: step
             kind: CHECK
             phase: PREPARE
             handler: probe.connectivity
-            position_x: 300
-            position_y: 120
+            position_x: 240
+            position_y: 140
             target_selectors:
               - type: role
                 role: health_targets
@@ -665,8 +665,8 @@ flows:
             kind: CHECK
             phase: VERIFY
             handler: netcli.collect_evidence
-            position_x: 600
-            position_y: 120
+            position_x: 660
+            position_y: 140
             target_selectors:
               - type: role
                 role: health_targets
@@ -685,15 +685,20 @@ flows:
             kind: CHECK
             phase: VERIFY
             handler: evidence.assert
-            position_x: 900
-            position_y: 120
+            position_x: 1080
+            position_y: 140
             params:
               artifact_step_id: neighbors
               target_role: health_targets
               command: show ip ospf neighbor
+              # Every neighbor row must be Full (rows start with the Neighbor
+              # ID address); an empty adjacency table must not pass.
               operator: contains
               expected: Full
-              message: OSPF neighbors are not Full on at least one router.
+              match_scope: lines
+              line_filter: '^\s*\d+\.\d+\.\d+\.\d+'
+              min_lines: 1
+              message: OSPF neighbors are not Full (or absent) on at least one router.
             policy:
               timeout_sec: 60
               retries: 0
@@ -703,14 +708,14 @@ flows:
             name: Healthy
             type: terminal
             terminal_status: success
-            position_x: 1200
-            position_y: 40
+            position_x: 1500
+            position_y: 60
           - id: failed
             name: Unhealthy
             type: terminal
             terminal_status: failure
-            position_x: 1200
-            position_y: 240
+            position_x: 1500
+            position_y: 280
         edges:
           - id: e_start_reachable
             source: start:start
@@ -790,15 +795,15 @@ flows:
             name: Start
             type: start
             position_x: 0
-            position_y: 120
+            position_y: 140
           - id: reachable
             name: Reachability probe (TCP/22)
             type: step
             kind: CHECK
             phase: PREPARE
             handler: probe.connectivity
-            position_x: 300
-            position_y: 120
+            position_x: 240
+            position_y: 140
             target_selectors:
               - type: role
                 role: probe_sources
@@ -818,8 +823,8 @@ flows:
             kind: ACTION
             phase: PREPARE
             handler: shell.execute
-            position_x: 600
-            position_y: 120
+            position_x: 660
+            position_y: 140
             target_selectors:
               - type: role
                 role: probe_sources
@@ -842,8 +847,8 @@ flows:
             kind: ACTION
             phase: VERIFY
             handler: shell.execute
-            position_x: 900
-            position_y: 120
+            position_x: 1080
+            position_y: 140
             target_selectors:
               - type: role
                 role: probe_sources
@@ -865,14 +870,14 @@ flows:
             name: All destinations reachable
             type: terminal
             terminal_status: success
-            position_x: 1200
-            position_y: 40
+            position_x: 1500
+            position_y: 60
           - id: failed
             name: Reachability failed
             type: terminal
             terminal_status: failure
-            position_x: 1200
-            position_y: 240
+            position_x: 1500
+            position_y: 280
         edges:
           - id: e_start_reachable
             source: start:start

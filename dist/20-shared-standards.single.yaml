@@ -21,15 +21,15 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 120
+        position_y: 140
       - id: render
         name: Render standards report
         type: step
         kind: EXECUTE
         phase: IMPLEMENTATION
         handler: container.run
-        position_x: 320
-        position_y: 120
+        position_x: 240
+        position_y: 140
         mounted_files:
         - report.sh
         params:
@@ -56,8 +56,8 @@ flows:
         name: Report generated
         type: terminal
         terminal_status: success
-        position_x: 640
-        position_y: 120
+        position_x: 660
+        position_y: 150
       edges:
       - id: e_start_render
         source: start:start
@@ -70,7 +70,9 @@ flows:
       edges: []
 - name: 'Shared: Ansible config audit'
   description: Run an Ansible playbook (localhost, no devices needed) that asserts the organization's golden standards are
-    all defined and writes a PASS/FAIL audit report. Demonstrates an Ansible activity; runnable by every tenant.
+    all defined and writes a PASS/FAIL audit report. A failing audit routes to its own "standards gap" failure terminal (the
+    report artifact records which standard is unset) instead of aborting the run. Demonstrates an Ansible activity; runnable
+    by every tenant.
   definition:
     graph:
       nodes:
@@ -78,15 +80,15 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 120
+        position_y: 140
       - id: audit
         name: ansible-playbook audit
         type: step
         kind: EXECUTE
         phase: VERIFY
         handler: container.run
-        position_x: 320
-        position_y: 120
+        position_x: 240
+        position_y: 140
         mounted_files:
         - audit.yml
         - run.sh
@@ -104,14 +106,20 @@ flows:
         policy:
           timeout_sec: 300
           retries: 0
-          on_failure: FAIL_RUN
+          on_failure: CONTINUE
           evidence_required: true
       - id: done
         name: Audit passed
         type: terminal
         terminal_status: success
-        position_x: 640
-        position_y: 120
+        position_x: 660
+        position_y: 80
+      - id: gap
+        name: Standards gap found
+        type: terminal
+        terminal_status: failure
+        position_x: 660
+        position_y: 240
       edges:
       - id: e_start_audit
         source: start:start
@@ -119,6 +127,9 @@ flows:
       - id: e_audit_done
         source: audit:success
         target: done
+      - id: e_audit_gap
+        source: audit:failure
+        target: gap
     interface_graph:
       nodes: []
       edges: []
@@ -132,15 +143,15 @@ flows:
         name: Start
         type: start
         position_x: 0
-        position_y: 120
+        position_y: 140
       - id: plan
         name: terraform init + plan
         type: step
         kind: EXECUTE
         phase: PREPARE
         handler: container.run
-        position_x: 320
-        position_y: 120
+        position_x: 240
+        position_y: 140
         mounted_files:
         - main.tf
         - run.sh
@@ -165,8 +176,8 @@ flows:
         name: Plan generated
         type: terminal
         terminal_status: success
-        position_x: 640
-        position_y: 120
+        position_x: 660
+        position_y: 150
       edges:
       - id: e_start_plan
         source: start:start

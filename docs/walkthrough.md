@@ -97,8 +97,41 @@ against). They become *reachable* only once the lab is stood up.
    events, and the container steps executing.
 3. When the lab is up, run **"Net: Lab routing health check"** — the run form
    opens with **all eleven lab routers already selected** as targets. It probes
-   reachability and asserts OSPF neighbors are Full.
-4. Run **"Ops: Announce service prefix"** — the **core routers are preselected**,
+   reachability and asserts OSPF neighbors are Full. Then try the two
+   **control-flow** flows built on the same routers: **"Net: Wait for OSPF
+   convergence"** re-collects neighbor state in an **until-loop** (watch the
+   loop container iterate on the Run graph, the attempt counter under **Run
+   Variables**, and the **branch** route on first-check vs. after-retries),
+   and **"Net: Per-prefix route audit"** runs a **for-each loop** over the
+   prefixes you pick on the launch form — one iteration and one evidence
+   StepRun per prefix via `{{ loop.item }}`.
+4. **The IaC trio** shows real Ansible and Terraform pipelines on the same
+   lab, each built around one control-flow construct:
+   * **"IaC: Ansible server baseline rollout"** — a **for-each loop** baselines
+     the four Linux servers one at a time with a real playbook (SSH + become,
+     golden standards from org variables). Watch **Run Variables** track
+     `current_host` and `rolled_out` live; the first failing host trips the
+     loop's **break edge** and the run halts at "Rollout halted" — the break
+     shows on the loop container as an early exit. The report step reads the
+     loop's collected results (`steps.rollout.output.results`). *(Requires the
+     lab images rebuilt after this demo-data update — the host image gained
+     python3 + sudo for Ansible; re-run the Lab provision flow if your lab
+     predates it.)*
+   * **"IaC: Terraform router service"** — the classic **plan → gate → apply**:
+     Terraform (fully offline, state in the run's shared workspace) plans the
+     desired service loopback; a **value-mode branch** switches on the launch
+     form's action. Run it once as *Plan only* and read the plan artifact;
+     re-run as *Plan and apply* — it pauses at the approval gate, then applies,
+     proves convergence with `-detailed-exitcode`, pushes the declared config
+     to the routers via netcli, and asserts the post-change evidence.
+   * **"IaC: Ansible router drift remediation"** — a **while-loop** audits the
+     core routers for the golden loopback description and, while any router
+     drifts, remediates over SSH with an Ansible **raw/vtysh** playbook (the
+     routers' login shell *is* vtysh — no python on the devices). First run:
+     audit fails → remediation pass → re-audit passes → `done`. Run it again:
+     compliant on the first check, zero remediation passes. The iteration cap
+     routes to a "Manual intervention required" terminal.
+5. Run **"Ops: Announce service prefix"** — the **core routers are preselected**,
    and the loopback / service-address / change-reference fields are **prefilled
    with defaults** (leave them as-is to accept the defaults, or override). It
    **pauses at a human approval gate**. As `meridian-noc` (an *operator*) try to
@@ -107,12 +140,12 @@ against). They become *reachable* only once the lab is stood up.
    **separation of duties**. To approve, switch to **`admin`** (who holds the
    approver role) and approve or reject it from the Run detail page (or the
    Approvals list). Approvals and the run outcome email the NOC.
-5. Run **"Ops: Backup lab configs to Git"** (**all routers preselected**) to push
+6. Run **"Ops: Backup lab configs to Git"** (**all routers preselected**) to push
    device configs to the demo Gitea; the backup manifest records the org
    standards — note it prints `ntp=192.0.2.123`, resolved from the **shared** org
    (see Act 4 for the contrast). And **"Net: End-to-end reachability test"** opens
    with the four **endpoint hosts preselected** as probe sources.
-6. **Native Git backups.** That flow pushes from *inside its container*; two more
+7. **Native Git backups.** That flow pushes from *inside its container*; two more
    Gitea repositories are wired for Hegemony to write to *itself* — and they work
    **out of the box** once the Lab flow has stood Gitea up. There is no token to
    create: the seed provisions a dedicated Gitea service account (`x-access-token`,

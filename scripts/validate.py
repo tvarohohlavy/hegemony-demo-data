@@ -20,8 +20,11 @@ import yaml
 from build import ROOT, BundleConfig, load_manifest, merge_fragments
 
 SECRET_CALL_RE = re.compile(r"secret\(\s*['\"]([^'\"]+)['\"]\s*\)")
+# Bundle-variable references ({{ vars.NAME }}). The lookbehind keeps
+# run-scoped variables (run.vars.NAME — per-run mutable state written by
+# set_vars nodes, not bundled variables) from matching.
 VARS_REF_RE = re.compile(
-    r"vars(?:\[['\"]([^'\"]+)['\"]\]|\.([A-Za-z_][A-Za-z0-9_]*))"
+    r"(?<![.\w])vars(?:\[['\"]([^'\"]+)['\"]\]|\.([A-Za-z_][A-Za-z0-9_]*))"
 )
 TEMPLATE_REF_RE = re.compile(r"{{\s*(env|file|secret)\s*\(")
 
@@ -120,6 +123,7 @@ class Validator:
         )
         self._validate_ref_fields()
         self._validate_handlers()
+        self._validate_loop_refs()
         return self.errors
 
     def _items(self, section: str) -> list[dict[str, Any]]:
@@ -314,11 +318,47 @@ class Validator:
                         f"flow {name!r} node {node.get('id')!r} uses unknown handler {handler!r}"
                     )
 
+    def _validate_loop_refs(self) -> None:
+        # loop_ref is exempt from template-reference syntax checks, so make
+        # sure a typo cannot slip through: it must name a loop node that
+        # exists in the same graph.
+        for flow in self._items("flows"):
+            name = flow.get("name")
+            definition = flow.get("definition")
+            if not isinstance(definition, dict):
+                continue
+            graph = definition.get("graph")
+            if not isinstance(graph, dict):
+                continue
+            nodes = graph.get("nodes")
+            if not isinstance(nodes, list):
+                continue
+            loop_ids: set[str] = set()
+            for node in nodes:
+                if not isinstance(node, dict) or node.get("type") != "loop":
+                    continue
+                loop_id = node.get("id")
+                if isinstance(loop_id, str) and loop_id:
+                    loop_ids.add(loop_id)
+            for node in nodes:
+                if not isinstance(node, dict):
+                    continue
+                ref = node.get("loop_ref")
+                # Type-guard before membership: a malformed (list/dict) ref must
+                # report as invalid, not TypeError out of the whole validation.
+                if ref is not None and (not isinstance(ref, str) or ref not in loop_ids):
+                    self.error(
+                        f"flow {name!r} node {node.get('id')!r} loop_ref {ref!r} "
+                        "does not name a loop node in the same graph"
+                    )
+
     def _validate_ref_fields(self) -> None:
         for location, key, value in self._walk_mapping_values(self.bundle):
             if not isinstance(value, str) or not value.strip():
                 continue
-            if key.endswith("_ref") and not TEMPLATE_REF_RE.search(value):
+            # loop_ref is a graph-node reference (a loop_end naming its loop
+            # head), not a secret/env reference.
+            if key.endswith("_ref") and key != "loop_ref" and not TEMPLATE_REF_RE.search(value):
                 self.error(f"{location} should use env(), file(), or secret() template syntax")
             if key == "url_secret" and not TEMPLATE_REF_RE.search(value):
                 self.error(f"{location} should use env(), file(), or secret() template syntax")
