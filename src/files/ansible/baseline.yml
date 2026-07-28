@@ -49,6 +49,12 @@
     - name: Assert the baseline records every golden standard
       ansible.builtin.assert:
         that:
+          # Non-empty first: a missing org variable renders "NTP_PRIMARY="
+          # and the exact-line check below would vacuously match it.
+          - tenant | length > 0
+          - ntp | length > 0
+          - dns | length > 0
+          - syslog | length > 0
           - "('TENANT=' + tenant) in baseline_check.stdout_lines"
           - "('NTP_PRIMARY=' + ntp) in baseline_check.stdout_lines"
           - "('DNS_PRIMARY=' + dns) in baseline_check.stdout_lines"

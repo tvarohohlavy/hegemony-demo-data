@@ -365,7 +365,11 @@ flows:
             cases:
               - id: c_clean
                 label: All prefixes present
-                when: "(run.vars.missing | default(0) | int) == 0"
+                # audited > 0 guards the vacuous case: an empty prefix
+                # selection runs zero iterations and must not report success.
+                when: >-
+                  (run.vars.missing | default(0) | int) == 0 and
+                  (run.vars.audited | default(0) | int) > 0
           - id: audit_done
             name: All prefixes present
             type: terminal

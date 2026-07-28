@@ -2023,7 +2023,7 @@ flows:
         cases:
         - id: c_clean
           label: All prefixes present
-          when: (run.vars.missing | default(0) | int) == 0
+          when: (run.vars.missing | default(0) | int) == 0 and (run.vars.audited | default(0) | int) > 0
       - id: audit_done
         name: All prefixes present
         type: terminal
@@ -2981,19 +2981,19 @@ flow_attachments:
   content: "# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>\n# SPDX-License-Identifier: AGPL-3.0-or-later\n\
     #\n# Lightweight Linux endpoint for the Meridian lab: an Alpine host with sshd so\n# Hegemony's shell.execute handler\
     \ can log in like to any server, plus\n# iproute2/iputils for end-to-end reachability tests across the routed fabric.\n\
-    # ping gets cap_net_raw so the non-root login can run it.\n#\n# python3 + passwordless sudo make the host a first-class\
-    \ Ansible managed node\n# for the \"IaC: Ansible server baseline rollout\" flow: ansible modules need a\n# python interpreter\
-    \ on the target, and the baseline playbook escalates with\n# become to write under /etc — the same shape as a real server\
-    \ fleet's\n# automation account.\n#\n# Built locally by \"Lab: Provision and tear down demo datacenter\" and\n# referenced\
-    \ from topology.clab.yml as image \"meridian/lab-host:latest\".\nFROM alpine:3.22\n\n# The login password is injected\
-    \ at build time from the meridian-lab-ssh vault\n# secret (same credential the git inventory provider hands to the routers).\n\
-    ARG LAB_PASSWORD=demo-lab-password\n\nRUN apk add --no-cache openssh iproute2 iputils libcap-utils python3 sudo \\\n \
-    \   && ssh-keygen -A \\\n    && sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config\
-    \ \\\n    && sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config \\\n    && adduser -D -s /bin/sh\
-    \ clab \\\n    && echo \"clab:${LAB_PASSWORD}\" | chpasswd \\\n    && echo \"clab ALL=(ALL) ALL\" > /etc/sudoers.d/clab\
-    \ \\\n    && chmod 0440 /etc/sudoers.d/clab \\\n    && setcap cap_net_raw+ep \"$(command -v ping)\"\n\nCOPY entrypoint.sh\
-    \ /usr/local/bin/host-entrypoint.sh\nRUN chmod +x /usr/local/bin/host-entrypoint.sh\n\nENTRYPOINT [\"/usr/local/bin/host-entrypoint.sh\"\
-    ]\n"
+    # ping gets cap_net_raw so the non-root login can run it.\n#\n# python3 + password-gated sudo make the host a first-class\
+    \ Ansible managed\n# node for the \"IaC: Ansible server baseline rollout\" flow: ansible modules\n# need a python interpreter\
+    \ on the target, and the baseline playbook escalates\n# with become (using the vault-sourced login password) to write\
+    \ under /etc —\n# the same shape as a real server fleet's automation account.\n#\n# Built locally by \"Lab: Provision\
+    \ and tear down demo datacenter\" and\n# referenced from topology.clab.yml as image \"meridian/lab-host:latest\".\nFROM\
+    \ alpine:3.22\n\n# The login password is injected at build time from the meridian-lab-ssh vault\n# secret (same credential\
+    \ the git inventory provider hands to the routers).\nARG LAB_PASSWORD=demo-lab-password\n\nRUN apk add --no-cache openssh\
+    \ iproute2 iputils libcap-utils python3 sudo \\\n    && ssh-keygen -A \\\n    && sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication\
+    \ yes/' /etc/ssh/sshd_config \\\n    && sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config \\\n\
+    \    && adduser -D -s /bin/sh clab \\\n    && echo \"clab:${LAB_PASSWORD}\" | chpasswd \\\n    && echo \"clab ALL=(ALL)\
+    \ ALL\" > /etc/sudoers.d/clab \\\n    && chmod 0440 /etc/sudoers.d/clab \\\n    && setcap cap_net_raw+ep \"$(command -v\
+    \ ping)\"\n\nCOPY entrypoint.sh /usr/local/bin/host-entrypoint.sh\nRUN chmod +x /usr/local/bin/host-entrypoint.sh\n\n\
+    ENTRYPOINT [\"/usr/local/bin/host-entrypoint.sh\"]\n"
 - flow: 'Lab: Provision and tear down demo datacenter'
   filename: host/entrypoint.sh
   content: '#!/bin/sh
@@ -3379,8 +3379,10 @@ flow_attachments:
     \ NTP {{ ntp | default('<unset>', true) }} / DNS {{ dns | default('<unset>', true) }} / syslog {{ syslog | default('<unset>',\
     \ true) }}\n\n    - name: Verify the baseline landed\n      ansible.builtin.command: cat /etc/meridian/baseline.env\n\
     \      register: baseline_check\n      changed_when: false\n\n    - name: Assert the baseline records every golden standard\n\
-    \      ansible.builtin.assert:\n        that:\n          - \"('TENANT=' + tenant) in baseline_check.stdout_lines\"\n \
-    \         - \"('NTP_PRIMARY=' + ntp) in baseline_check.stdout_lines\"\n          - \"('DNS_PRIMARY=' + dns) in baseline_check.stdout_lines\"\
+    \      ansible.builtin.assert:\n        that:\n          # Non-empty first: a missing org variable renders \"NTP_PRIMARY=\"\
+    \n          # and the exact-line check below would vacuously match it.\n          - tenant | length > 0\n          - ntp\
+    \ | length > 0\n          - dns | length > 0\n          - syslog | length > 0\n          - \"('TENANT=' + tenant) in baseline_check.stdout_lines\"\
+    \n          - \"('NTP_PRIMARY=' + ntp) in baseline_check.stdout_lines\"\n          - \"('DNS_PRIMARY=' + dns) in baseline_check.stdout_lines\"\
     \n          - \"('SYSLOG_PRIMARY=' + syslog) in baseline_check.stdout_lines\"\n        success_msg: \"Baseline present\
     \ on {{ inventory_hostname }}.\"\n        fail_msg: \"Baseline on {{ inventory_hostname }} does not match the golden standards.\"\
     \n"
@@ -3407,19 +3409,20 @@ flow_attachments:
   filename: service.tf
   content: "# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier: AGPL-3.0-or-later\n\
     #\n# Desired state for a routed lab service, used by the \"IaC: Terraform router\n# service\" flow: one terraform_data\
-    \ resource per target router records the\n# service loopback each router must carry, and the rendered_config output is\n\
-    # the exact vtysh command block the flow's netcli push step applies. Only the\n# builtin terraform_data resource is used,\
-    \ so init/plan/apply run fully\n# offline (no provider downloads) with local state kept in the run's /shared\n# workspace\
-    \ — plan genuinely diffs against the state apply wrote earlier in\n# the same run.\n\nvariable \"service_name\" {\n  type\
-    \        = string\n  description = \"Short service identifier stamped into the interface description.\"\n}\n\nvariable\
-    \ \"service_prefix\" {\n  type        = string\n  description = \"Host address the service loopback advertises (pushed\
-    \ as a /32).\"\n}\n\nvariable \"routers\" {\n  type        = list(string)\n  description = \"Target routers that must\
-    \ carry the service loopback.\"\n}\n\nresource \"terraform_data\" \"router_service\" {\n  for_each = toset(var.routers)\n\
-    \n  input = {\n    router      = each.value\n    description = \"svc ${var.service_name} managed-by-terraform\"\n    address\
-    \     = \"${var.service_prefix}/32\"\n  }\n}\n\noutput \"rendered_config\" {\n  description = \"Per-router vtysh command\
-    \ block realizing the desired state.\"\n  value = {\n    for router, desired in terraform_data.router_service : router\
-    \ => join(\"\\n\", [\n      \"interface lo\",\n      \" description ${desired.input.description}\",\n      \" ip address\
-    \ ${desired.input.address}\",\n    ])\n  }\n}\n"
+    \ resource per target router records the\n# service loopback each router must carry, and the rendered_config output\n\
+    # shows the equivalent vtysh command block (the flow's netcli push step\n# renders the same commands from its own inputs).\
+    \ Only the\n# builtin terraform_data resource is used, so init/plan/apply run fully\n# offline (no provider downloads)\
+    \ with local state kept in the run's /shared\n# workspace — plan genuinely diffs against the state apply wrote earlier\
+    \ in\n# the same run.\n\nvariable \"service_name\" {\n  type        = string\n  description = \"Short service identifier\
+    \ stamped into the interface description.\"\n}\n\nvariable \"service_prefix\" {\n  type        = string\n  description\
+    \ = \"Host address the service loopback advertises (pushed as a /32).\"\n}\n\nvariable \"routers\" {\n  type        =\
+    \ list(string)\n  description = \"Target routers that must carry the service loopback.\"\n}\n\nresource \"terraform_data\"\
+    \ \"router_service\" {\n  for_each = toset(var.routers)\n\n  input = {\n    router      = each.value\n    description\
+    \ = \"svc ${var.service_name} managed-by-terraform\"\n    address     = \"${var.service_prefix}/32\"\n  }\n}\n\noutput\
+    \ \"rendered_config\" {\n  description = \"Per-router vtysh command block equivalent to the desired state.\"\n  value\
+    \ = {\n    for router, desired in terraform_data.router_service : router => join(\"\\n\", [\n      \"interface lo\",\n\
+    \      \" description ${desired.input.description}\",\n      \" ip address ${desired.input.address}\",\n    ])\n  }\n\
+    }\n"
 - flow: 'IaC: Terraform router service'
   filename: plan.sh
   content: '#!/bin/sh

@@ -123,6 +123,7 @@ class Validator:
         )
         self._validate_ref_fields()
         self._validate_handlers()
+        self._validate_loop_refs()
         return self.errors
 
     def _items(self, section: str) -> list[dict[str, Any]]:
@@ -315,6 +316,36 @@ class Validator:
                 if handler not in KNOWN_HANDLERS:
                     self.error(
                         f"flow {name!r} node {node.get('id')!r} uses unknown handler {handler!r}"
+                    )
+
+    def _validate_loop_refs(self) -> None:
+        # loop_ref is exempt from template-reference syntax checks, so make
+        # sure a typo cannot slip through: it must name a loop node that
+        # exists in the same graph.
+        for flow in self._items("flows"):
+            name = flow.get("name")
+            definition = flow.get("definition")
+            if not isinstance(definition, dict):
+                continue
+            graph = definition.get("graph")
+            if not isinstance(graph, dict):
+                continue
+            nodes = graph.get("nodes")
+            if not isinstance(nodes, list):
+                continue
+            loop_ids = {
+                node.get("id")
+                for node in nodes
+                if isinstance(node, dict) and node.get("type") == "loop"
+            }
+            for node in nodes:
+                if not isinstance(node, dict):
+                    continue
+                ref = node.get("loop_ref")
+                if ref is not None and ref not in loop_ids:
+                    self.error(
+                        f"flow {name!r} node {node.get('id')!r} loop_ref {ref!r} "
+                        "does not name a loop node in the same graph"
                     )
 
     def _validate_ref_fields(self) -> None:
