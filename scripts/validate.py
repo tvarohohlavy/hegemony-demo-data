@@ -406,6 +406,48 @@ def _derive_site_path(sites_root: Path, site_file: Path) -> str:
     return f"{dir_path}/{site_file.stem}" if dir_path != "." else site_file.stem
 
 
+# Values from this CSV are interpolated into a shell command by the
+# reachability flow, so they are constrained here as well as scrubbed at
+# render time. IPv4/IPv6 literals and DNS hostnames only.
+_PING_ADDRESS_RE = re.compile(r"^[0-9A-Za-z](?:[0-9A-Za-z._:-]*[0-9A-Za-z])?$")
+
+
+def validate_lab_csv_attachments(root: Path) -> list[str]:
+    """Validate CSV attachments whose values reach a shell command.
+
+    ``ping-destinations.csv`` feeds the reachability sweep's target list. The
+    flow scrubs the values before interpolating them, but a shipped CSV should
+    never rely on that: catching a bad address here fails the build with a
+    clear message instead of silently pinging a mangled target.
+    """
+    errors: list[str] = []
+    csv_path = root / "src" / "files" / "lab" / "ping-destinations.csv"
+    if not csv_path.exists():
+        return errors
+    rel = csv_path.relative_to(root)
+    rows = csv_path.read_text(encoding="utf-8").splitlines()
+    if not rows:
+        return [f"{rel}: file is empty"]
+    header = [column.strip() for column in rows[0].split(",")]
+    if "address" not in header:
+        return [f"{rel}: missing required 'address' column"]
+    address_index = header.index("address")
+    for line_number, row in enumerate(rows[1:], start=2):
+        if not row.strip():
+            continue
+        cells = row.split(",")
+        if len(cells) <= address_index:
+            errors.append(f"{rel}:{line_number}: row has no address column")
+            continue
+        address = cells[address_index].strip()
+        if not _PING_ADDRESS_RE.match(address):
+            errors.append(
+                f"{rel}:{line_number}: address {address!r} is not a bare "
+                "IP address or hostname"
+            )
+    return errors
+
+
 def validate_inventory_tree(root: Path) -> list[str]:
     """Validate the git-provider inventory tree under ``demo-inventory/``.
 
@@ -616,6 +658,7 @@ def main() -> int:
                 ).validate()
             )
         errors.extend(validate_inventory_tree(ROOT / "demo-inventory"))
+        errors.extend(validate_lab_csv_attachments(ROOT))
     except Exception as exc:
         print(f"validate.py: {exc}", file=sys.stderr)
         return 2

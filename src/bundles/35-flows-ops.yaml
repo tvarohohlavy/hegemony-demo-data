@@ -943,8 +943,17 @@ flows:
               # shell.execute runs ONE command per line (multi-line scripts are
               # split into separate exec channels at render time), so the ping
               # sweep must stay a single line.
+              #
+              # The targets come from an editable CSV attachment, so they are
+              # scrubbed to the character set of an address/hostname before
+              # they are interpolated. That matters because the values land in
+              # the `for` word list: a `;` or `$(...)` surviving to that point
+              # would be shell *syntax*, not data, and no amount of quoting
+              # inside the loop body could rein it back in. The `case` guard
+              # then drops anything starting with `-`, which the character
+              # filter cannot catch and `ping` would read as an option.
               commands:
-                - 'FAIL=0; for t in {{ inputs.ping_targets | join(" ") }}; do echo "--- ping $t ---"; ping -c 3 -W 2 "$t" || FAIL=1; done; exit $FAIL'
+                - 'FAIL=0; for t in {{ inputs.ping_targets | join(" ") | regex_replace("[^0-9A-Za-z.:_ -]", "") }}; do case "$t" in -*) echo "skipping invalid target: $t"; FAIL=1; continue;; esac; echo "--- ping $t ---"; ping -c 3 -W 2 "$t" || FAIL=1; done; exit $FAIL'
             policy:
               timeout_sec: 180
               retries: 0
