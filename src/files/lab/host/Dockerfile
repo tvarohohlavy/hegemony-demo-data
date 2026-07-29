@@ -6,11 +6,11 @@
 # iproute2/iputils for end-to-end reachability tests across the routed fabric.
 # ping gets cap_net_raw so the non-root login can run it.
 #
-# python3 + passwordless sudo make the host a first-class Ansible managed node
-# for the "IaC: Ansible server baseline rollout" flow: ansible modules need a
-# python interpreter on the target, and the baseline playbook escalates with
-# become to write under /etc — the same shape as a real server fleet's
-# automation account.
+# python3 + password-gated sudo make the host a first-class Ansible managed
+# node for the "IaC: Ansible server baseline rollout" flow: ansible modules
+# need a python interpreter on the target, and the baseline playbook escalates
+# with become (using the vault-sourced login password) to write under /etc —
+# the same shape as a real server fleet's automation account.
 #
 # Built locally by "Lab: Provision and tear down demo datacenter" and
 # referenced from topology.clab.yml as image "meridian/lab-host:latest".
@@ -26,7 +26,7 @@ RUN apk add --no-cache openssh iproute2 iputils libcap-utils python3 sudo \
     && sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config \
     && adduser -D -s /bin/sh clab \
     && echo "clab:${LAB_PASSWORD}" | chpasswd \
-    && echo "clab ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/clab \
+    && echo "clab ALL=(ALL) ALL" > /etc/sudoers.d/clab \
     && chmod 0440 /etc/sudoers.d/clab \
     && setcap cap_net_raw+ep "$(command -v ping)"
 

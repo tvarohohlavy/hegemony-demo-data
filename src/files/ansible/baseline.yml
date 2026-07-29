@@ -46,9 +46,27 @@
       register: baseline_check
       changed_when: false
 
+<<<<<<< HEAD
     - name: Assert the baseline records this tenant
       ansible.builtin.assert:
         that:
           - "('TENANT=' + tenant) in baseline_check.stdout"
         success_msg: "Baseline present on {{ inventory_hostname }}."
         fail_msg: "Baseline file on {{ inventory_hostname }} does not record tenant {{ tenant }}."
+=======
+    - name: Assert the baseline records every golden standard
+      ansible.builtin.assert:
+        that:
+          # Non-empty first: a missing org variable renders "NTP_PRIMARY="
+          # and the exact-line check below would vacuously match it.
+          - tenant | length > 0
+          - ntp | length > 0
+          - dns | length > 0
+          - syslog | length > 0
+          - "('TENANT=' + tenant) in baseline_check.stdout_lines"
+          - "('NTP_PRIMARY=' + ntp) in baseline_check.stdout_lines"
+          - "('DNS_PRIMARY=' + dns) in baseline_check.stdout_lines"
+          - "('SYSLOG_PRIMARY=' + syslog) in baseline_check.stdout_lines"
+        success_msg: "Baseline present on {{ inventory_hostname }}."
+        fail_msg: "Baseline on {{ inventory_hostname }} does not match the golden standards."
+>>>>>>> origin/main

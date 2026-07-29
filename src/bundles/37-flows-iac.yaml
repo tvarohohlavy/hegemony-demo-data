@@ -61,7 +61,7 @@ flows:
             name: For each server
             type: loop
             loop_mode: for_each
-            items_expr: "inputs.baseline_hosts"
+            items_expr: "targets.baseline_targets | map(attribute='name') | list"
             max_iterations: 16
             collect: "loop.item"
             position_x: 600
@@ -248,6 +248,14 @@ flows:
       convergence check before netcli pushes the declared config to the
       routers and asserts the post-change evidence.
     definition:
+      # Terraform serializes on its state: a second apply against the same
+      # state either blocks on the lock or, worse, plans against a state the
+      # first run is mid-way through rewriting. Admitting one run at a time
+      # turns that into an immediate, readable refusal instead of a wedged
+      # run. The apply path is approval-gated, and a run parked on that gate
+      # keeps holding the slot — correct, since its state is still checked out.
+      run_limits:
+        max_concurrent_runs: 1
       graph:
         nodes:
           - id: start
@@ -277,7 +285,7 @@ flows:
               env:
                 TF_VAR_service_name: "{{ inputs.service_name }}"
                 TF_VAR_service_prefix: "{{ inputs.service_prefix }}"
-                TF_VAR_routers: "{{ inputs.tf_targets | tojson }}"
+                TF_VAR_routers: "{{ targets.tf_targets | map(attribute='name') | list | tojson }}"
             policy:
               timeout_sec: 300
               retries: 0
@@ -365,7 +373,7 @@ flows:
               env:
                 TF_VAR_service_name: "{{ inputs.service_name }}"
                 TF_VAR_service_prefix: "{{ inputs.service_prefix }}"
-                TF_VAR_routers: "{{ inputs.tf_targets | tojson }}"
+                TF_VAR_routers: "{{ targets.tf_targets | map(attribute='name') | list | tojson }}"
             policy:
               timeout_sec: 300
               retries: 0
@@ -425,8 +433,14 @@ flows:
               artifact_step_id: postcheck
               target_role: tf_targets
               command: show running-config
+              # Line scope: the service description line must exist on every
+              # router AND still carry the managed-by-terraform tag — catching
+              # a hand-edited description, not just a missing one.
               operator: contains
-              expected: "svc {{ inputs.service_name }} managed-by-terraform"
+              expected: managed-by-terraform
+              match_scope: lines
+              line_filter: "description svc {{ inputs.service_name }} "
+              min_lines: 1
               message: A target router does not carry the declared service loopback.
             policy:
               timeout_sec: 60
@@ -689,6 +703,9 @@ flows:
               artifact_step_id: audit
               target_role: drift_targets
               command: show running-config
+              # Deliberately whole-output: the golden marker lives on one
+              # Loopback0 description line, and a line filter cannot express
+              # "under interface Loopback0" — presence is the honest check.
               operator: contains
               expected: managed by Meridian NetOps
               message: At least one router lacks the golden loopback description.
@@ -731,7 +748,7 @@ flows:
               command:
                 - sh /attachments/remediate.sh
               env:
-                LIMIT_HOSTS: "{{ inputs.drift_targets | join(',') }}"
+                LIMIT_HOSTS: "{{ targets.drift_targets | map(attribute='name') | join(',') }}"
                 LAB_USER: "{{ secret('vault://orgs/default/secrets/meridian/lab/ssh/username') }}"
                 LAB_PASSWORD: "{{ secret('vault://orgs/default/secrets/meridian/lab/ssh/password') }}"
             policy:
@@ -834,13 +851,13 @@ flows:
               field_type: inventory.device
               required: true
               description: >-
-                FRR routers audited for the golden loopback description — the
-                core fabric, preselected. Remediation is limited to this
-                selection.
+                FRR routers audited for the golden loopback description.
+                Preselects the cores the Terraform demo does NOT manage —
+                both demos stamp the same "interface lo" description, so
+                overlapping targets would overwrite each other's assertions.
+                Remediation is limited to this selection.
               default_value:
-                - dc1-core-01
                 - dc1-core-02
-                - dc2-core-01
                 - dc2-core-02
               config:
                 role: drift_targets

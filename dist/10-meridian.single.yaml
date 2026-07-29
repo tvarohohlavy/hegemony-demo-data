@@ -464,6 +464,9 @@ flows:
     and two branches), attach the lab network to the workers, and optionally stand up Gitea; then hold at an approval gate
     (no expiry) so you can interact with the lab. Approve to tear it down, reject to leave it running.
   definition:
+    run_limits:
+      max_concurrent_runs: 1
+      cooldown_seconds: 60
     graph:
       nodes:
       - id: start
@@ -632,6 +635,24 @@ flows:
         cancel_policy: wait
         position_x: 2160
         position_y: 300
+      - id: converge_check
+        name: Kick off OSPF convergence check
+        type: step
+        kind: EXECUTE
+        phase: IMPLEMENTATION
+        handler: flow.run
+        position_x: 2320
+        position_y: 500
+        params:
+          flow_name: 'Net: Wait for OSPF convergence'
+          wait_for_completion: false
+          field_mappings: {}
+          target_mappings: {}
+        policy:
+          timeout_sec: 60
+          retries: 0
+          on_failure: CONTINUE
+          evidence_required: false
       - id: hold
         name: Interact, then approve to tear down
         type: approval
@@ -741,8 +762,14 @@ flows:
       - id: e_gitea_join_fail
         source: deploy_gitea:failure
         target: join
-      - id: e_join_hold
+      - id: e_join_converge
         source: join:joined
+        target: converge_check
+      - id: e_converge_hold
+        source: converge_check:success
+        target: hold
+      - id: e_converge_hold_fail
+        source: converge_check:failure
         target: hold
       - id: e_join_failed
         source: join:join_failed
@@ -810,6 +837,10 @@ flows:
   description: Collect running configuration from the selected routers and commit it to a Git repository. Dry run (default)
     commits locally and prints the result; unchecking Dry run pushes to the demo Gitea config-backups repository.
   definition:
+    run_limits:
+      max_concurrent_runs: 1
+      max_runs_per_window: 12
+      window_seconds: 3600
     graph:
       nodes:
       - id: start
@@ -1001,6 +1032,9 @@ flows:
     signal). The launch form demonstrates number/text/bool/enum fields, cross-field templated defaults, input validation,
     and a conditional (visible_when) field.
   definition:
+    run_limits:
+      max_concurrent_runs: 1
+      cooldown_seconds: 60
     graph:
       nodes:
       - id: start
@@ -1164,16 +1198,33 @@ flows:
         position_x: 80
         position_y: 60
         width: 480
-        height: 180
+        height: 260
         data:
           label: Target routers
           runtime_layout: card
           collapsible: false
-      - id: f_targets
+      - id: f_site
         kind: field
         parent_id: sec_targets
         position_x: 40
         position_y: 60
+        data:
+          label: Site
+          field_id: site
+          field_type: core.enum
+          required: false
+          description: 'Optional: narrow the router list to one lab site. Options load live from the inventory sites.'
+          config:
+            option_source:
+              kind: inventory.sites
+              filters:
+                provider_id:
+                  static_value: git:lab-inventory
+      - id: f_targets
+        kind: field
+        parent_id: sec_targets
+        position_x: 40
+        position_y: 140
         data:
           label: Routers
           field_id: targets
@@ -1337,6 +1388,12 @@ flows:
         - semantic_type: visible_when
           operator: truthy
           value: null
+      - id: e_site_targets
+        source: f_site
+        target: f_targets
+        relations:
+        - semantic_type: options_filter
+          value: site_id
 - name: 'Net: Lab routing health check'
   description: Verify the selected routers are reachable and their OSPF adjacencies are Full. Runs a TCP reachability probe,
     collects OSPF state, and asserts on the neighbor output.
@@ -1346,6 +1403,10 @@ flows:
   sync_mode: synced
   auto_commit: true
   definition:
+    run_limits:
+      max_runs_per_window: 6
+      window_seconds: 3600
+      cooldown_seconds: 30
     graph:
       nodes:
       - id: start
@@ -1408,7 +1469,10 @@ flows:
           command: show ip ospf neighbor
           operator: contains
           expected: Full
-          message: OSPF neighbors are not Full on at least one router.
+          match_scope: lines
+          line_filter: ^\s*\d+\.\d+\.\d+\.\d+
+          min_lines: 1
+          message: OSPF neighbors are not Full (or absent) on at least one router.
         policy:
           timeout_sec: 60
           retries: 0
@@ -1455,16 +1519,31 @@ flows:
         position_x: 80
         position_y: 80
         width: 480
-        height: 180
+        height: 260
         data:
           label: Target routers
           runtime_layout: card
           collapsible: false
-      - id: f_targets
+      - id: f_provider
         kind: field
         parent_id: sec_targets
         position_x: 40
         position_y: 60
+        data:
+          label: Inventory provider
+          field_id: inventory_provider
+          field_type: core.enum
+          required: false
+          description: 'Optional: health-check only devices owned by one inventory provider (the built-in "local" or the lab
+            git provider).'
+          config:
+            option_source:
+              kind: inventory.providers
+      - id: f_targets
+        kind: field
+        parent_id: sec_targets
+        position_x: 40
+        position_y: 140
         data:
           label: Routers
           field_id: targets
@@ -1488,7 +1567,13 @@ flows:
             multiple: true
             option_source:
               kind: inventory.devices
-      edges: []
+      edges:
+      - id: e_provider_targets
+        source: f_provider
+        target: f_targets
+        relations:
+        - semantic_type: options_filter
+          value: provider_id
 - name: 'Net: End-to-end reachability test'
   description: Log into the selected Linux endpoint hosts over SSH and ping the chosen lab destinations across the routed
     fabric — a true end-to-end test from host LAN to host LAN through multi-area OSPF. Demonstrates the remote shell (exec-channel)
@@ -1562,8 +1647,9 @@ flows:
           fail_fast: true
           command_timeout_sec: 120
           commands:
-          - FAIL=0; for t in {{ inputs.ping_targets | join(" ") }}; do echo "--- ping $t ---"; ping -c 3 -W 2 "$t" || FAIL=1;
-            done; exit $FAIL
+          - 'FAIL=0; for t in {{ inputs.ping_targets | join(" ") | regex_replace("[^0-9A-Za-z.:_ -]", "") }}; do case "$t"
+            in -*) echo "skipping invalid target: $t"; FAIL=1; continue;; esac; echo "--- ping $t ---"; ping -c 3 -W 2 "$t"
+            || FAIL=1; done; exit $FAIL'
         policy:
           timeout_sec: 180
           retries: 0
@@ -1642,16 +1728,34 @@ flows:
         position_x: 620
         position_y: 80
         width: 520
-        height: 220
+        height: 300
         data:
           label: Destinations
           runtime_layout: card
           collapsible: false
-      - id: f_ping_targets
+      - id: f_dest_area
         kind: field
         parent_id: sec_destinations
         position_x: 40
         position_y: 60
+        data:
+          label: Destination area
+          field_id: dest_area
+          field_type: core.enum
+          required: false
+          description: 'Optional: narrow the destination list to one lab area. Options are the distinct `area` values from
+            the attached CSV.'
+          config:
+            option_source:
+              kind: attachment.csv
+              config:
+                filename: data/ping-destinations.csv
+                value_column: area
+      - id: f_ping_targets
+        kind: field
+        parent_id: sec_destinations
+        position_x: 40
+        position_y: 140
         data:
           label: Ping destinations
           field_id: ping_targets
@@ -1660,29 +1764,27 @@ flows:
           default_value:
           - 10.101.1.10
           - 10.104.1.10
-          description: Lab addresses each source host must reach.
+          description: Lab addresses each source host must reach (from the attached CSV).
           config:
             multiple: true
             option_source:
-              kind: core.static
-              static_options:
-              - value: 10.101.1.10
-                label: dc1-srv-01 (Lab DC1 endpoint LAN)
-              - value: 10.104.1.10
-                label: dc2-srv-01 (Lab DC2 endpoint LAN)
-              - value: 10.102.1.10
-                label: br1-srv-01 (Lab Branch 1 endpoint LAN)
-              - value: 10.103.1.10
-                label: br2-srv-01 (Lab Branch 2 endpoint LAN)
-              - value: 10.255.255.1
-                label: dc1-core-01 loopback (backbone)
-              - value: 10.255.255.9
-                label: dc2-core-01 loopback (backbone)
-      edges: []
+              kind: attachment.csv
+              config:
+                filename: data/ping-destinations.csv
+                value_column: address
+                label_column: name
+                description_column: area
+      edges:
+      - id: e_area_targets
+        source: f_dest_area
+        target: f_ping_targets
+        relations:
+        - semantic_type: options_filter
+          value: area
 - name: 'Net: Wait for OSPF convergence'
   description: 'Retry-until-healthy: collect OSPF neighbor state from the selected routers in a loop until every adjacency
-    is Full (or give up after 6 attempts). Run-scoped variables track the attempt count and verdict; a branch after the loop
-    reports whether the fabric was converged on the first check or needed retries.'
+    is Full (or give up after 10 attempts, 5s apart). Run-scoped variables track the attempt count and verdict; a branch after
+    the loop reports whether the fabric was converged on the first check or needed retries.'
   definition:
     graph:
       nodes:
@@ -1706,7 +1808,8 @@ flows:
         type: loop
         loop_mode: until
         condition: run.vars.converged | default(false)
-        max_iterations: 6
+        max_iterations: 10
+        iteration_delay_sec: 5
         position_x: 620
         position_y: 80
         width: 1260
@@ -1746,7 +1849,10 @@ flows:
           command: show ip ospf neighbor
           operator: contains
           expected: Full
-          message: At least one router still has a non-Full OSPF neighbor.
+          match_scope: lines
+          line_filter: ^\s*\d+\.\d+\.\d+\.\d+
+          min_lines: 1
+          message: At least one router has a non-Full (or no) OSPF neighbor.
         policy:
           timeout_sec: 60
           retries: 0
@@ -1950,8 +2056,11 @@ flows:
           target_role: audit_targets
           command: show ip route {{ loop.item }}
           operator: contains
-          expected: Routing entry for
-          message: A router has no route for {{ loop.item }}.
+          expected: '{{ loop.item }}'
+          match_scope: lines
+          line_filter: '^Routing entry for '
+          min_lines: 1
+          message: A router has no routing entry for {{ loop.item }}.
         policy:
           timeout_sec: 60
           retries: 0
@@ -1993,7 +2102,7 @@ flows:
         cases:
         - id: c_clean
           label: All prefixes present
-          when: (run.vars.missing | default(0) | int) == 0
+          when: (run.vars.missing | default(0) | int) == 0 and (run.vars.audited | default(0) | int) > 0
       - id: audit_done
         name: All prefixes present
         type: terminal
@@ -2143,7 +2252,7 @@ flows:
         name: For each server
         type: loop
         loop_mode: for_each
-        items_expr: inputs.baseline_hosts
+        items_expr: targets.baseline_targets | map(attribute='name') | list
         max_iterations: 16
         collect: loop.item
         position_x: 600
@@ -2317,6 +2426,8 @@ flows:
     by a -detailed-exitcode convergence check before netcli pushes the declared config to the routers and asserts the post-change
     evidence.'
   definition:
+    run_limits:
+      max_concurrent_runs: 1
     graph:
       nodes:
       - id: start
@@ -2346,7 +2457,7 @@ flows:
           env:
             TF_VAR_service_name: '{{ inputs.service_name }}'
             TF_VAR_service_prefix: '{{ inputs.service_prefix }}'
-            TF_VAR_routers: '{{ inputs.tf_targets | tojson }}'
+            TF_VAR_routers: '{{ targets.tf_targets | map(attribute=''name'') | list | tojson }}'
         policy:
           timeout_sec: 300
           retries: 0
@@ -2432,7 +2543,7 @@ flows:
           env:
             TF_VAR_service_name: '{{ inputs.service_name }}'
             TF_VAR_service_prefix: '{{ inputs.service_prefix }}'
-            TF_VAR_routers: '{{ inputs.tf_targets | tojson }}'
+            TF_VAR_routers: '{{ targets.tf_targets | map(attribute=''name'') | list | tojson }}'
         policy:
           timeout_sec: 300
           retries: 0
@@ -2493,7 +2604,10 @@ flows:
           target_role: tf_targets
           command: show running-config
           operator: contains
-          expected: svc {{ inputs.service_name }} managed-by-terraform
+          expected: managed-by-terraform
+          match_scope: lines
+          line_filter: 'description svc {{ inputs.service_name }} '
+          min_lines: 1
           message: A target router does not carry the declared service loopback.
         policy:
           timeout_sec: 60
@@ -2792,7 +2906,7 @@ flows:
           command:
           - sh /attachments/remediate.sh
           env:
-            LIMIT_HOSTS: '{{ inputs.drift_targets | join('','') }}'
+            LIMIT_HOSTS: '{{ targets.drift_targets | map(attribute=''name'') | join('','') }}'
             LAB_USER: '{{ secret(''vault://orgs/default/secrets/meridian/lab/ssh/username'') }}'
             LAB_PASSWORD: '{{ secret(''vault://orgs/default/secrets/meridian/lab/ssh/password'') }}'
         policy:
@@ -2892,12 +3006,11 @@ flows:
           field_id: drift_targets
           field_type: inventory.device
           required: true
-          description: FRR routers audited for the golden loopback description — the core fabric, preselected. Remediation
-            is limited to this selection.
+          description: FRR routers audited for the golden loopback description. Preselects the cores the Terraform demo does
+            NOT manage — both demos stamp the same "interface lo" description, so overlapping targets would overwrite each
+            other's assertions. Remediation is limited to this selection.
           default_value:
-          - dc1-core-01
           - dc1-core-02
-          - dc2-core-01
           - dc2-core-02
           config:
             role: drift_targets
@@ -2949,19 +3062,19 @@ flow_attachments:
   content: "# SPDX-FileCopyrightText: 2025-2026 Jakub Trávník <jakub.travnik@gmail.com>\n# SPDX-License-Identifier: AGPL-3.0-or-later\n\
     #\n# Lightweight Linux endpoint for the Meridian lab: an Alpine host with sshd so\n# Hegemony's shell.execute handler\
     \ can log in like to any server, plus\n# iproute2/iputils for end-to-end reachability tests across the routed fabric.\n\
-    # ping gets cap_net_raw so the non-root login can run it.\n#\n# python3 + passwordless sudo make the host a first-class\
-    \ Ansible managed node\n# for the \"IaC: Ansible server baseline rollout\" flow: ansible modules need a\n# python interpreter\
-    \ on the target, and the baseline playbook escalates with\n# become to write under /etc — the same shape as a real server\
-    \ fleet's\n# automation account.\n#\n# Built locally by \"Lab: Provision and tear down demo datacenter\" and\n# referenced\
-    \ from topology.clab.yml as image \"meridian/lab-host:latest\".\nFROM alpine:3.22\n\n# The login password is injected\
-    \ at build time from the meridian-lab-ssh vault\n# secret (same credential the git inventory provider hands to the routers).\n\
-    ARG LAB_PASSWORD=demo-lab-password\n\nRUN apk add --no-cache openssh iproute2 iputils libcap-utils python3 sudo \\\n \
-    \   && ssh-keygen -A \\\n    && sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config\
-    \ \\\n    && sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config \\\n    && adduser -D -s /bin/sh\
-    \ clab \\\n    && echo \"clab:${LAB_PASSWORD}\" | chpasswd \\\n    && echo \"clab ALL=(ALL) NOPASSWD: ALL\" > /etc/sudoers.d/clab\
-    \ \\\n    && chmod 0440 /etc/sudoers.d/clab \\\n    && setcap cap_net_raw+ep \"$(command -v ping)\"\n\nCOPY entrypoint.sh\
-    \ /usr/local/bin/host-entrypoint.sh\nRUN chmod +x /usr/local/bin/host-entrypoint.sh\n\nENTRYPOINT [\"/usr/local/bin/host-entrypoint.sh\"\
-    ]\n"
+    # ping gets cap_net_raw so the non-root login can run it.\n#\n# python3 + password-gated sudo make the host a first-class\
+    \ Ansible managed\n# node for the \"IaC: Ansible server baseline rollout\" flow: ansible modules\n# need a python interpreter\
+    \ on the target, and the baseline playbook escalates\n# with become (using the vault-sourced login password) to write\
+    \ under /etc —\n# the same shape as a real server fleet's automation account.\n#\n# Built locally by \"Lab: Provision\
+    \ and tear down demo datacenter\" and\n# referenced from topology.clab.yml as image \"meridian/lab-host:latest\".\nFROM\
+    \ alpine:3.22\n\n# The login password is injected at build time from the meridian-lab-ssh vault\n# secret (same credential\
+    \ the git inventory provider hands to the routers).\nARG LAB_PASSWORD=demo-lab-password\n\nRUN apk add --no-cache openssh\
+    \ iproute2 iputils libcap-utils python3 sudo \\\n    && ssh-keygen -A \\\n    && sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication\
+    \ yes/' /etc/ssh/sshd_config \\\n    && sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config \\\n\
+    \    && adduser -D -s /bin/sh clab \\\n    && echo \"clab:${LAB_PASSWORD}\" | chpasswd \\\n    && echo \"clab ALL=(ALL)\
+    \ ALL\" > /etc/sudoers.d/clab \\\n    && chmod 0440 /etc/sudoers.d/clab \\\n    && setcap cap_net_raw+ep \"$(command -v\
+    \ ping)\"\n\nCOPY entrypoint.sh /usr/local/bin/host-entrypoint.sh\nRUN chmod +x /usr/local/bin/host-entrypoint.sh\n\n\
+    ENTRYPOINT [\"/usr/local/bin/host-entrypoint.sh\"]\n"
 - flow: 'Lab: Provision and tear down demo datacenter'
   filename: host/entrypoint.sh
   content: '#!/bin/sh
@@ -3288,6 +3401,23 @@ flow_attachments:
     \necho \"  flow-backups and platform-backups are writable by Hegemony out of the box:\"\necho \"  the ${GIT_USER} service\
     \ account authenticates with the meridian-gitea-token\"\necho \"  secret as its password. Nothing secret is minted or\
     \ printed here.\"\n"
+- flow: 'Net: End-to-end reachability test'
+  filename: data/ping-destinations.csv
+  content: 'area,address,name
+
+    Lab DC1,10.101.1.10,dc1-srv-01 endpoint LAN
+
+    Lab Branch 1,10.102.1.10,br1-srv-01 endpoint LAN
+
+    Lab Branch 2,10.103.1.10,br2-srv-01 endpoint LAN
+
+    Lab DC2,10.104.1.10,dc2-srv-01 endpoint LAN
+
+    Backbone,10.255.255.1,dc1-core-01 loopback
+
+    Backbone,10.255.255.9,dc2-core-01 loopback
+
+    '
 - flow: 'IaC: Ansible server baseline rollout'
   filename: hosts.ini
   content: '# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
@@ -3319,7 +3449,21 @@ flow_attachments:
 
     ansible_connection=ssh
 
+    <<<<<<< HEAD
+
     ansible_ssh_common_args=-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+
+    =======
+
+    # accept-new pins each host key on first contact and rejects a mid-run change.
+
+    # The known-hosts file lives in the throwaway rollout container''s /tmp, so it
+
+    # is fresh every run — regenerated lab host keys never conflict across deploys.
+
+    ansible_ssh_common_args=-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/lab-known-hosts
+
+    >>>>>>> origin/main
 
     '
 - flow: 'IaC: Ansible server baseline rollout'
@@ -3340,10 +3484,17 @@ flow_attachments:
     \ |\n          {{ tenant }} lab server {{ inventory_hostname }} — baseline managed by Ansible.\n          Golden standards:\
     \ NTP {{ ntp | default('<unset>', true) }} / DNS {{ dns | default('<unset>', true) }} / syslog {{ syslog | default('<unset>',\
     \ true) }}\n\n    - name: Verify the baseline landed\n      ansible.builtin.command: cat /etc/meridian/baseline.env\n\
-    \      register: baseline_check\n      changed_when: false\n\n    - name: Assert the baseline records this tenant\n  \
-    \    ansible.builtin.assert:\n        that:\n          - \"('TENANT=' + tenant) in baseline_check.stdout\"\n        success_msg:\
-    \ \"Baseline present on {{ inventory_hostname }}.\"\n        fail_msg: \"Baseline file on {{ inventory_hostname }} does\
-    \ not record tenant {{ tenant }}.\"\n"
+    \      register: baseline_check\n      changed_when: false\n\n<<<<<<< HEAD\n    - name: Assert the baseline records this\
+    \ tenant\n      ansible.builtin.assert:\n        that:\n          - \"('TENANT=' + tenant) in baseline_check.stdout\"\n\
+    \        success_msg: \"Baseline present on {{ inventory_hostname }}.\"\n        fail_msg: \"Baseline file on {{ inventory_hostname\
+    \ }} does not record tenant {{ tenant }}.\"\n=======\n    - name: Assert the baseline records every golden standard\n\
+    \      ansible.builtin.assert:\n        that:\n          # Non-empty first: a missing org variable renders \"NTP_PRIMARY=\"\
+    \n          # and the exact-line check below would vacuously match it.\n          - tenant | length > 0\n          - ntp\
+    \ | length > 0\n          - dns | length > 0\n          - syslog | length > 0\n          - \"('TENANT=' + tenant) in baseline_check.stdout_lines\"\
+    \n          - \"('NTP_PRIMARY=' + ntp) in baseline_check.stdout_lines\"\n          - \"('DNS_PRIMARY=' + dns) in baseline_check.stdout_lines\"\
+    \n          - \"('SYSLOG_PRIMARY=' + syslog) in baseline_check.stdout_lines\"\n        success_msg: \"Baseline present\
+    \ on {{ inventory_hostname }}.\"\n        fail_msg: \"Baseline on {{ inventory_hostname }} does not match the golden standards.\"\
+    \n>>>>>>> origin/main\n"
 - flow: 'IaC: Ansible server baseline rollout'
   filename: rolling.sh
   content: "#!/bin/sh\n# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier:\
@@ -3355,8 +3506,11 @@ flow_attachments:
     \ host is what trips the flow's\n# canary break edge and halts the rollout.\nset -eu\n\n: \"${TARGET_HOST:?TARGET_HOST\
     \ is required (the host to baseline)}\"\n: \"${LAB_USER:?LAB_USER is required}\"\n: \"${LAB_PASSWORD:?LAB_PASSWORD is\
     \ required}\"\n\napk add --no-cache ansible-core sshpass openssh-client >/dev/null\nmkdir -p /artifacts/new\n\nEXTRA_VARS=$(mktemp)\n\
-    trap 'rm -f \"${EXTRA_VARS}\"' EXIT\ncat >\"${EXTRA_VARS}\" <<EOF\nansible_user: \"${LAB_USER}\"\nansible_password: \"\
-    ${LAB_PASSWORD}\"\nansible_become_password: \"${LAB_PASSWORD}\"\nEOF\n\necho \"Applying server baseline to ${TARGET_HOST}\
+    trap 'rm -f \"${EXTRA_VARS}\"' EXIT\n# JSON is valid YAML and json.dump escapes anything a credential can\n# contain —\
+    \ quotes or newlines in the secret cannot corrupt the vars file.\npython3 - \"${EXTRA_VARS}\" <<'PY'\nimport json\nimport\
+    \ os\nimport sys\n\nwith open(sys.argv[1], \"w\") as handle:\n    json.dump(\n        {\n            \"ansible_user\"\
+    : os.environ[\"LAB_USER\"],\n            \"ansible_password\": os.environ[\"LAB_PASSWORD\"],\n            \"ansible_become_password\"\
+    : os.environ[\"LAB_PASSWORD\"],\n        },\n        handle,\n    )\nPY\n\necho \"Applying server baseline to ${TARGET_HOST}\
     \ ...\"\nLOG=\"/artifacts/new/baseline-${TARGET_HOST}.txt\"\nrc=0\nansible-playbook \\\n  -i /attachments/hosts.ini \\\
     \n  --limit \"${TARGET_HOST}\" \\\n  -e \"@${EXTRA_VARS}\" \\\n  /attachments/baseline.yml >\"${LOG}\" 2>&1 || rc=$?\n\
     cat \"${LOG}\"\nexit \"${rc}\"\n"
@@ -3364,19 +3518,20 @@ flow_attachments:
   filename: service.tf
   content: "# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier: AGPL-3.0-or-later\n\
     #\n# Desired state for a routed lab service, used by the \"IaC: Terraform router\n# service\" flow: one terraform_data\
-    \ resource per target router records the\n# service loopback each router must carry, and the rendered_config output is\n\
-    # the exact vtysh command block the flow's netcli push step applies. Only the\n# builtin terraform_data resource is used,\
-    \ so init/plan/apply run fully\n# offline (no provider downloads) with local state kept in the run's /shared\n# workspace\
-    \ — plan genuinely diffs against the state apply wrote earlier in\n# the same run.\n\nvariable \"service_name\" {\n  type\
-    \        = string\n  description = \"Short service identifier stamped into the interface description.\"\n}\n\nvariable\
-    \ \"service_prefix\" {\n  type        = string\n  description = \"Host address the service loopback advertises (pushed\
-    \ as a /32).\"\n}\n\nvariable \"routers\" {\n  type        = list(string)\n  description = \"Target routers that must\
-    \ carry the service loopback.\"\n}\n\nresource \"terraform_data\" \"router_service\" {\n  for_each = toset(var.routers)\n\
-    \n  input = {\n    router      = each.value\n    description = \"svc ${var.service_name} managed-by-terraform\"\n    address\
-    \     = \"${var.service_prefix}/32\"\n  }\n}\n\noutput \"rendered_config\" {\n  description = \"Per-router vtysh command\
-    \ block realizing the desired state.\"\n  value = {\n    for router, desired in terraform_data.router_service : router\
-    \ => join(\"\\n\", [\n      \"interface lo\",\n      \" description ${desired.input.description}\",\n      \" ip address\
-    \ ${desired.input.address}\",\n    ])\n  }\n}\n"
+    \ resource per target router records the\n# service loopback each router must carry, and the rendered_config output\n\
+    # shows the equivalent vtysh command block (the flow's netcli push step\n# renders the same commands from its own inputs).\
+    \ Only the\n# builtin terraform_data resource is used, so init/plan/apply run fully\n# offline (no provider downloads)\
+    \ with local state kept in the run's /shared\n# workspace — plan genuinely diffs against the state apply wrote earlier\
+    \ in\n# the same run.\n\nvariable \"service_name\" {\n  type        = string\n  description = \"Short service identifier\
+    \ stamped into the interface description.\"\n}\n\nvariable \"service_prefix\" {\n  type        = string\n  description\
+    \ = \"Host address the service loopback advertises (pushed as a /32).\"\n}\n\nvariable \"routers\" {\n  type        =\
+    \ list(string)\n  description = \"Target routers that must carry the service loopback.\"\n}\n\nresource \"terraform_data\"\
+    \ \"router_service\" {\n  for_each = toset(var.routers)\n\n  input = {\n    router      = each.value\n    description\
+    \ = \"svc ${var.service_name} managed-by-terraform\"\n    address     = \"${var.service_prefix}/32\"\n  }\n}\n\noutput\
+    \ \"rendered_config\" {\n  description = \"Per-router vtysh command block equivalent to the desired state.\"\n  value\
+    \ = {\n    for router, desired in terraform_data.router_service : router => join(\"\\n\", [\n      \"interface lo\",\n\
+    \      \" description ${desired.input.description}\",\n      \" ip address ${desired.input.address}\",\n    ])\n  }\n\
+    }\n"
 - flow: 'IaC: Terraform router service'
   filename: plan.sh
   content: '#!/bin/sh
@@ -3458,7 +3613,7 @@ flow_attachments:
   content: "#!/bin/sh\n# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier:\
     \ AGPL-3.0-or-later\n#\n# Post-apply convergence check: terraform plan -detailed-exitcode against the\n# state apply just\
     \ wrote. Exit 0 = state matches the desired config (the step\n# succeeds); exit 2 = drift remains (surfaced as a step\
-    \ failure so the flow\n# routes to its drift terminal); exit 1 = plan error.\nset -eu\n\nWORKDIR=/shared/tf\ncd \"${WORKDIR}\"\
+    \ failure, routing the\n# flow to its failure terminal); exit 1 = plan error.\nset -eu\n\nWORKDIR=/shared/tf\ncd \"${WORKDIR}\"\
     \nmkdir -p /artifacts/new\n\nrc=0\nterraform plan -input=false -no-color -detailed-exitcode \\\n  >/artifacts/new/terraform-verify.txt\
     \ 2>&1 || rc=$?\ncat /artifacts/new/terraform-verify.txt\n\ncase \"${rc}\" in\n  0) echo \"Converged: state matches the\
     \ desired configuration.\" ;;\n  2) echo \"Drift detected: the state does not match the desired configuration.\" >&2 ;;\n\
@@ -3525,7 +3680,15 @@ flow_attachments:
 
     ansible_connection=ssh
 
-    ansible_ssh_common_args=-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    # accept-new pins each host key on first contact and rejects a mid-run change.
+
+    # The known-hosts file lives in the throwaway remediation container''s /tmp, so
+
+    # it is fresh every run — regenerated lab host keys never conflict across
+
+    # deploys.
+
+    ansible_ssh_common_args=-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/lab-known-hosts
 
     '
 - flow: 'IaC: Ansible router drift remediation'
@@ -3538,8 +3701,9 @@ flow_attachments:
     \ carries the golden loopback description.\n- name: Meridian router golden-config remediation\n  hosts: all\n  gather_facts:\
     \ false\n  tasks:\n    - name: Stamp the golden loopback description\n      ansible.builtin.raw: |\n        configure\
     \ terminal\n        interface lo\n        description managed by Meridian NetOps\n        end\n      changed_when: true\n\
-    \n    - name: Read back the loopback config\n      ansible.builtin.raw: |\n        show running-config interface lo\n\
-    \      register: lo_config\n      changed_when: false\n\n    - name: Assert the description is present\n      ansible.builtin.assert:\n\
+    \n    - name: Read back the running config\n      # This FRR build has no per-interface running-config filter — read the\n\
+    \      # whole config and assert on the marker line.\n      ansible.builtin.raw: |\n        show running-config\n    \
+    \  register: lo_config\n      changed_when: false\n\n    - name: Assert the description is present\n      ansible.builtin.assert:\n\
     \        that:\n          - \"'managed by Meridian NetOps' in lo_config.stdout\"\n        success_msg: \"{{ inventory_hostname\
     \ }} carries the golden description.\"\n        fail_msg: \"{{ inventory_hostname }} still lacks the golden description.\"\
     \n"
@@ -3552,10 +3716,13 @@ flow_attachments:
     \ step and the flow's while-loop retries.\nset -eu\n\n: \"${LIMIT_HOSTS:?LIMIT_HOSTS is required (comma-separated router\
     \ names)}\"\n: \"${LAB_USER:?LAB_USER is required}\"\n: \"${LAB_PASSWORD:?LAB_PASSWORD is required}\"\n\napk add --no-cache\
     \ ansible-core sshpass openssh-client >/dev/null\nmkdir -p /artifacts/new\n\nEXTRA_VARS=$(mktemp)\ntrap 'rm -f \"${EXTRA_VARS}\"\
-    ' EXIT\ncat >\"${EXTRA_VARS}\" <<EOF\nansible_user: \"${LAB_USER}\"\nansible_password: \"${LAB_PASSWORD}\"\nEOF\n\necho\
-    \ \"Remediating routers: ${LIMIT_HOSTS} ...\"\nLOG=\"/artifacts/new/remediation.txt\"\nrc=0\nansible-playbook \\\n  -i\
-    \ /attachments/routers.ini \\\n  --limit \"${LIMIT_HOSTS}\" \\\n  -e \"@${EXTRA_VARS}\" \\\n  /attachments/remediate.yml\
-    \ >\"${LOG}\" 2>&1 || rc=$?\ncat \"${LOG}\"\nexit \"${rc}\"\n"
+    ' EXIT\n# JSON is valid YAML and json.dump escapes anything a credential can\n# contain — quotes or newlines in the secret\
+    \ cannot corrupt the vars file.\npython3 - \"${EXTRA_VARS}\" <<'PY'\nimport json\nimport os\nimport sys\n\nwith open(sys.argv[1],\
+    \ \"w\") as handle:\n    json.dump(\n        {\n            \"ansible_user\": os.environ[\"LAB_USER\"],\n            \"\
+    ansible_password\": os.environ[\"LAB_PASSWORD\"],\n        },\n        handle,\n    )\nPY\n\necho \"Remediating routers:\
+    \ ${LIMIT_HOSTS} ...\"\nLOG=\"/artifacts/new/remediation.txt\"\nrc=0\nansible-playbook \\\n  -i /attachments/routers.ini\
+    \ \\\n  --limit \"${LIMIT_HOSTS}\" \\\n  -e \"@${EXTRA_VARS}\" \\\n  /attachments/remediate.yml >\"${LOG}\" 2>&1 || rc=$?\n\
+    cat \"${LOG}\"\nexit \"${rc}\"\n"
 variables:
 - name: ORG_NAME
   value: Meridian Networks

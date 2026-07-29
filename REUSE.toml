@@ -22,3 +22,11 @@ path = ["src/files/lab/frr/*.conf", "src/files/lab/frr/vtysh.conf"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2025-2026 Jakub Travnik <jakub.travnik@gmail.com>"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# CSV option-source data parsed row-by-row by the flow form (attachment.csv);
+# a comment header would be read as data, so annotate it here instead.
+[[annotations]]
+path = "src/files/lab/*.csv"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025-2026 Jakub Travnik <jakub.travnik@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

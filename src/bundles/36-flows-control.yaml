@@ -27,8 +27,9 @@ flows:
   - name: "Net: Wait for OSPF convergence"
     description: >-
       Retry-until-healthy: collect OSPF neighbor state from the selected
-      routers in a loop until every adjacency is Full (or give up after 6
-      attempts). Run-scoped variables track the attempt count and verdict; a
+      routers in a loop until every adjacency is Full (or give up after 10
+      attempts, 5s apart). Run-scoped variables track the attempt count and
+      verdict; a
       branch after the loop reports whether the fabric was converged on the
       first check or needed retries.
     definition:
@@ -54,7 +55,10 @@ flows:
             type: loop
             loop_mode: until
             condition: "run.vars.converged | default(false)"
-            max_iterations: 6
+            max_iterations: 10
+            # Pace the poll: wait between re-checks instead of hammering the
+            # routers — 10 attempts x 5s rides out OSPF adjacency formation.
+            iteration_delay_sec: 5
             position_x: 620
             position_y: 80
             width: 1260
@@ -92,9 +96,16 @@ flows:
               artifact_step_id: collect_state
               target_role: converge_targets
               command: show ip ospf neighbor
+              # Line scope: EVERY neighbor row must say Full — a whole-output
+              # "contains Full" would pass with one healthy adjacency among
+              # broken ones. The filter selects the rows (they start with the
+              # Neighbor ID address) and min_lines rejects an empty table.
               operator: contains
               expected: Full
-              message: At least one router still has a non-Full OSPF neighbor.
+              match_scope: lines
+              line_filter: '^\s*\d+\.\d+\.\d+\.\d+'
+              min_lines: 1
+              message: At least one router has a non-Full (or no) OSPF neighbor.
             policy:
               timeout_sec: 60
               retries: 0
@@ -304,9 +315,15 @@ flows:
               artifact_step_id: check_route
               target_role: audit_targets
               command: "show ip route {{ loop.item }}"
+              # Line scope: the routing entry must exist AND be for the queried
+              # prefix — "% Network not in table" selects zero lines and fails
+              # via min_lines instead of sneaking past a bare presence check.
               operator: contains
-              expected: "Routing entry for"
-              message: "A router has no route for {{ loop.item }}."
+              expected: "{{ loop.item }}"
+              match_scope: lines
+              line_filter: "^Routing entry for "
+              min_lines: 1
+              message: "A router has no routing entry for {{ loop.item }}."
             policy:
               timeout_sec: 60
               retries: 0
@@ -348,7 +365,11 @@ flows:
             cases:
               - id: c_clean
                 label: All prefixes present
-                when: "(run.vars.missing | default(0) | int) == 0"
+                # audited > 0 guards the vacuous case: an empty prefix
+                # selection runs zero iterations and must not report success.
+                when: >-
+                  (run.vars.missing | default(0) | int) == 0 and
+                  (run.vars.audited | default(0) | int) > 0
           - id: audit_done
             name: All prefixes present
             type: terminal

@@ -3,8 +3,9 @@
 #
 # Desired state for a routed lab service, used by the "IaC: Terraform router
 # service" flow: one terraform_data resource per target router records the
-# service loopback each router must carry, and the rendered_config output is
-# the exact vtysh command block the flow's netcli push step applies. Only the
+# service loopback each router must carry, and the rendered_config output
+# shows the equivalent vtysh command block (the flow's netcli push step
+# renders the same commands from its own inputs). Only the
 # builtin terraform_data resource is used, so init/plan/apply run fully
 # offline (no provider downloads) with local state kept in the run's /shared
 # workspace — plan genuinely diffs against the state apply wrote earlier in
@@ -36,7 +37,7 @@ resource "terraform_data" "router_service" {
 }
 
 output "rendered_config" {
-  description = "Per-router vtysh command block realizing the desired state."
+  description = "Per-router vtysh command block equivalent to the desired state."
   value = {
     for router, desired in terraform_data.router_service : router => join("\n", [
       "interface lo",

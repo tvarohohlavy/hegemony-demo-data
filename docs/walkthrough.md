@@ -92,7 +92,9 @@ against). They become *reachable* only once the lab is stood up.
    the images and stands up the containerlab (eleven FRR routers, a Gitea, and
    the endpoint hosts). It parks at an approval gate at the end so the lab stays
    up for you to explore; the NOC is emailed when it parks (see MailHog at the
-   port your env prints).
+   port your env prints). Try starting it a second time while it runs: the flow
+   declares a **run limit** of one, so the second attempt is refused — a
+   parked run still holds its slot, because the lab is still standing.
 2. While it runs, watch the **Run detail** graph: parallel branches, live step
    events, and the container steps executing.
 3. When the lab is up, run **"Net: Lab routing health check"** — the run form
@@ -166,6 +168,8 @@ against). They become *reachable* only once the lab is stood up.
 > **Feature:** a git inventory provider synced at bootstrap so its devices are
 > present from first boot, the MSP's own lab flows with **preselected default
 > targets**, the containerlab, parallel flow execution, approval gates,
+> **run limits** (the lab and the Terraform flow admit one run at a time; the
+> webhook-reachable health check is capped per hour instead),
 > notifications, backups in three flavours (flow-container push, native flow
 > Git-sync, and Platform Sync export), and shared-variable resolution.
 
@@ -301,7 +305,9 @@ admin role) · shared **Ansible** and
 attachments and runnable with no inputs · flows with **preselected default
 targets** that survive import as portable device names · a **git inventory
 provider synced at bootstrap** so its lab devices are present before the flows
-that target them import · the containerlab,
+that target them import · **run limits** that refuse a run when a flow is
+already at capacity, on a cooldown, or over its hourly budget ·
+the containerlab,
 parallel execution,
 approval gates, notifications, git backups, file repositories, and inventory
 providers.
