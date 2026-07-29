@@ -464,6 +464,9 @@ flows:
     and two branches), attach the lab network to the workers, and optionally stand up Gitea; then hold at an approval gate
     (no expiry) so you can interact with the lab. Approve to tear it down, reject to leave it running.
   definition:
+    run_limits:
+      max_concurrent_runs: 1
+      cooldown_seconds: 60
     graph:
       nodes:
       - id: start
@@ -830,6 +833,10 @@ flows:
   description: Collect running configuration from the selected routers and commit it to a Git repository. Dry run (default)
     commits locally and prints the result; unchecking Dry run pushes to the demo Gitea config-backups repository.
   definition:
+    run_limits:
+      max_concurrent_runs: 1
+      max_runs_per_window: 12
+      window_seconds: 3600
     graph:
       nodes:
       - id: start
@@ -1021,6 +1028,9 @@ flows:
     signal). The launch form demonstrates number/text/bool/enum fields, cross-field templated defaults, input validation,
     and a conditional (visible_when) field.
   definition:
+    run_limits:
+      max_concurrent_runs: 1
+      cooldown_seconds: 60
     graph:
       nodes:
       - id: start
@@ -1389,6 +1399,10 @@ flows:
   sync_mode: synced
   auto_commit: true
   definition:
+    run_limits:
+      max_runs_per_window: 6
+      window_seconds: 3600
+      cooldown_seconds: 30
     graph:
       nodes:
       - id: start
@@ -2407,6 +2421,8 @@ flows:
     by a -detailed-exitcode convergence check before netcli pushes the declared config to the routers and asserts the post-change
     evidence.'
   definition:
+    run_limits:
+      max_concurrent_runs: 1
     graph:
       nodes:
       - id: start

@@ -26,6 +26,17 @@ flows:
       approval gate (no expiry) so you can interact with the lab. Approve to
       tear it down, reject to leave it running.
     definition:
+      # Only one lab may exist at a time: this flow drives the host Docker
+      # daemon and deploys a topology on fixed management addresses, so a
+      # second concurrent run would fight the first over images, container
+      # names and IP addresses. Note that the run parks on an approval gate
+      # with no expiry, and a parked run still holds its slot — which is
+      # exactly right here: the lab stays occupied until you approve the
+      # teardown. The cooldown keeps an accidental double-click from racing a
+      # rebuild against a teardown.
+      run_limits:
+        max_concurrent_runs: 1
+        cooldown_seconds: 60
       graph:
         nodes:
           - id: start

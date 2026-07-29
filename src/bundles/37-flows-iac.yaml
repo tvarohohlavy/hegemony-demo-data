@@ -248,6 +248,14 @@ flows:
       convergence check before netcli pushes the declared config to the
       routers and asserts the post-change evidence.
     definition:
+      # Terraform serializes on its state: a second apply against the same
+      # state either blocks on the lock or, worse, plans against a state the
+      # first run is mid-way through rewriting. Admitting one run at a time
+      # turns that into an immediate, readable refusal instead of a wedged
+      # run. The apply path is approval-gated, and a run parked on that gate
+      # keeps holding the slot — correct, since its state is still checked out.
+      run_limits:
+        max_concurrent_runs: 1
       graph:
         nodes:
           - id: start

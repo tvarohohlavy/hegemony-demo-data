@@ -31,6 +31,15 @@ flows:
       a Git repository. Dry run (default) commits locally and prints the result;
       unchecking Dry run pushes to the demo Gitea config-backups repository.
     definition:
+      # Two backups at once would race each other pushing to the same
+      # config-backups repository, so commits are serialized. This flow is
+      # also the target of the GitOps drift webhook: a repository that emits a
+      # burst of drift events would otherwise queue a backup per event, hence
+      # the hourly ceiling on top of the nightly schedule.
+      run_limits:
+        max_concurrent_runs: 1
+        max_runs_per_window: 12
+        window_seconds: 3600
       graph:
         nodes:
           - id: start
@@ -259,6 +268,13 @@ flows:
       number/text/bool/enum fields, cross-field templated defaults, input
       validation, and a conditional (visible_when) field.
     definition:
+      # This flow mutates routing on live devices and is reachable from the
+      # ITSM change-window webhook, so overlapping runs could advertise
+      # conflicting prefixes on the same routers. One at a time, with a
+      # cooldown so a retried change ticket doesn't immediately re-fire.
+      run_limits:
+        max_concurrent_runs: 1
+        cooldown_seconds: 60
       graph:
         nodes:
           - id: start
@@ -665,6 +681,16 @@ flows:
     sync_mode: synced
     auto_commit: true
     definition:
+      # Read-only, so concurrent runs are harmless and deliberately not
+      # capped. The risk here is volume: this flow sits behind the monitoring
+      # alarm webhook as well as an hourly schedule, and one flapping link can
+      # emit alarms by the dozen. The rolling window absorbs the burst and
+      # heals itself, and the cooldown collapses duplicate alarms that arrive
+      # seconds apart.
+      run_limits:
+        max_runs_per_window: 6
+        window_seconds: 3600
+        cooldown_seconds: 30
       graph:
         nodes:
           - id: start
