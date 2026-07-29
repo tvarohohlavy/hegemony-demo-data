@@ -8,6 +8,9 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import io
+import ipaddress
 import re
 import sys
 from pathlib import Path
@@ -406,10 +409,28 @@ def _derive_site_path(sites_root: Path, site_file: Path) -> str:
     return f"{dir_path}/{site_file.stem}" if dir_path != "." else site_file.stem
 
 
-# Values from this CSV are interpolated into a shell command by the
-# reachability flow, so they are constrained here as well as scrubbed at
-# render time. IPv4/IPv6 literals and DNS hostnames only.
-_PING_ADDRESS_RE = re.compile(r"^[0-9A-Za-z](?:[0-9A-Za-z._:-]*[0-9A-Za-z])?$")
+# Columns the reachability flow reads out of ping-destinations.csv: `address`
+# is the ping target, `area` drives the cascade, `name` is the option label.
+_PING_REQUIRED_COLUMNS = ("address", "area", "name")
+
+# A DNS label: alphanumeric, inner hyphens allowed, 63 chars max.
+_DNS_LABEL_RE = re.compile(r"^[0-9A-Za-z](?:[0-9A-Za-z-]{0,61}[0-9A-Za-z])?$")
+
+
+def _is_ping_address(value: str) -> bool:
+    """Whether ``value`` is a bare IP literal or DNS hostname.
+
+    The reachability flow interpolates these into a shell command (scrubbed at
+    render time), so anything that is not plainly an address is rejected here.
+    """
+    if not value or len(value) > 253:
+        return False
+    try:
+        ipaddress.ip_address(value)
+        return True
+    except ValueError:
+        pass
+    return all(_DNS_LABEL_RE.match(label) for label in value.split("."))
 
 
 def validate_lab_csv_attachments(root: Path) -> list[str]:
@@ -418,29 +439,31 @@ def validate_lab_csv_attachments(root: Path) -> list[str]:
     ``ping-destinations.csv`` feeds the reachability sweep's target list. The
     flow scrubs the values before interpolating them, but a shipped CSV should
     never rely on that: catching a bad address here fails the build with a
-    clear message instead of silently pinging a mangled target.
+    clear message instead of silently pinging a mangled target. Parsed with
+    ``csv`` (not naive comma splitting) so it agrees with the backend's own
+    reader about quoting.
     """
     errors: list[str] = []
     csv_path = root / "src" / "files" / "lab" / "ping-destinations.csv"
     if not csv_path.exists():
         return errors
     rel = csv_path.relative_to(root)
-    rows = csv_path.read_text(encoding="utf-8").splitlines()
-    if not rows:
+    reader = csv.DictReader(io.StringIO(csv_path.read_text(encoding="utf-8")))
+    if reader.fieldnames is None:
         return [f"{rel}: file is empty"]
-    header = [column.strip() for column in rows[0].split(",")]
-    if "address" not in header:
-        return [f"{rel}: missing required 'address' column"]
-    address_index = header.index("address")
-    for line_number, row in enumerate(rows[1:], start=2):
-        if not row.strip():
+
+    header = {(name or "").strip() for name in reader.fieldnames}
+    missing = [column for column in _PING_REQUIRED_COLUMNS if column not in header]
+    if missing:
+        return [f"{rel}: missing required column(s): {', '.join(missing)}"]
+
+    # Row 1 is the header, so data rows start at line 2.
+    for line_number, row in enumerate(reader, start=2):
+        address = (row.get("address") or "").strip()
+        if not address:
+            errors.append(f"{rel}:{line_number}: row has no address")
             continue
-        cells = row.split(",")
-        if len(cells) <= address_index:
-            errors.append(f"{rel}:{line_number}: row has no address column")
-            continue
-        address = cells[address_index].strip()
-        if not _PING_ADDRESS_RE.match(address):
+        if not _is_ping_address(address):
             errors.append(
                 f"{rel}:{line_number}: address {address!r} is not a bare "
                 "IP address or hostname"
