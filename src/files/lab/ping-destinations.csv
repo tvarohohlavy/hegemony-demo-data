@@ -1,0 +1,7 @@
+area,address,name
+Lab DC1,10.101.1.10,dc1-srv-01 endpoint LAN
+Lab Branch 1,10.102.1.10,br1-srv-01 endpoint LAN
+Lab Branch 2,10.103.1.10,br2-srv-01 endpoint LAN
+Lab DC2,10.104.1.10,dc2-srv-01 endpoint LAN
+Backbone,10.255.255.1,dc1-core-01 loopback
+Backbone,10.255.255.9,dc2-core-01 loopback

@@ -10,12 +10,17 @@
 #    pushes them to the demo Gitea.
 #  * "Announce service prefix" is the flagship form: an approval gate followed
 #    by pre-checks, a CLI change, post-checks and an evidence comparison. Its
-#    launch form exercises every field type and a conditional (visible_when)
-#    field.
-#  * "Lab routing health check" verifies OSPF adjacencies and reachability.
+#    launch form exercises every field type, a conditional (visible_when)
+#    field, and a site → router cascading select fed live from inventory
+#    sites (with a fixed provider_id filter).
+#  * "Lab routing health check" verifies OSPF adjacencies and reachability;
+#    its form offers an inventory-provider select cascading into the router
+#    picker.
 #  * "End-to-end reachability test" logs into the Linux endpoint hosts with
 #    shell.execute and pings across the routed fabric — the exec-channel
-#    (remote shell) paradigm next to netcli's prompt-scraping.
+#    (remote shell) paradigm next to netcli's prompt-scraping. Its destination
+#    options come from a CSV attachment (data/ping-destinations.csv) with an
+#    area → destination cascade across two columns of the same file.
 
 schema_version: 2
 
@@ -26,6 +31,15 @@ flows:
       a Git repository. Dry run (default) commits locally and prints the result;
       unchecking Dry run pushes to the demo Gitea config-backups repository.
     definition:
+      # Two backups at once would race each other pushing to the same
+      # config-backups repository, so commits are serialized. This flow is
+      # also the target of the GitOps drift webhook: a repository that emits a
+      # burst of drift events would otherwise queue a backup per event, hence
+      # the hourly ceiling on top of the nightly schedule.
+      run_limits:
+        max_concurrent_runs: 1
+        max_runs_per_window: 12
+        window_seconds: 3600
       graph:
         nodes:
           - id: start
@@ -254,6 +268,13 @@ flows:
       number/text/bool/enum fields, cross-field templated defaults, input
       validation, and a conditional (visible_when) field.
     definition:
+      # This flow mutates routing on live devices and is reachable from the
+      # ITSM change-window webhook, so overlapping runs could advertise
+      # conflicting prefixes on the same routers. One at a time, with a
+      # cooldown so a retried change ticket doesn't immediately re-fire.
+      run_limits:
+        max_concurrent_runs: 1
+        cooldown_seconds: 60
       graph:
         nodes:
           - id: start
@@ -435,16 +456,37 @@ flows:
             position_x: 80
             position_y: 60
             width: 480
-            height: 180
+            height: 260
             data:
               label: Target routers
               runtime_layout: card
               collapsible: false
-          - id: f_targets
+          - id: f_site
             kind: field
             parent_id: sec_targets
             position_x: 40
             position_y: 60
+            data:
+              label: Site
+              field_id: site
+              field_type: core.enum
+              required: false
+              description: >-
+                Optional: narrow the router list to one lab site. Options load
+                live from the inventory sites.
+              config:
+                option_source:
+                  kind: inventory.sites
+                  # Fixed (always-on) filter: only sites owned by the demo git
+                  # provider, so disabled example providers never leak in.
+                  filters:
+                    provider_id:
+                      static_value: "git:lab-inventory"
+          - id: f_targets
+            kind: field
+            parent_id: sec_targets
+            position_x: 40
+            position_y: 140
             data:
               label: Routers
               field_id: targets
@@ -612,6 +654,14 @@ flows:
               - semantic_type: visible_when
                 operator: truthy
                 value: null
+          # Cascading select: the chosen site narrows the router picker via
+          # the inventory.devices `site_id` filter key.
+          - id: e_site_targets
+            source: f_site
+            target: f_targets
+            relations:
+              - semantic_type: options_filter
+                value: site_id
 
   - name: "Net: Lab routing health check"
     description: >-
@@ -631,6 +681,16 @@ flows:
     sync_mode: synced
     auto_commit: true
     definition:
+      # Read-only, so concurrent runs are harmless and deliberately not
+      # capped. The risk here is volume: this flow sits behind the monitoring
+      # alarm webhook as well as an hourly schedule, and one flapping link can
+      # emit alarms by the dozen. The rolling window absorbs the burst and
+      # heals itself, and the cooldown collapses duplicate alarms that arrive
+      # seconds apart.
+      run_limits:
+        max_runs_per_window: 6
+        window_seconds: 3600
+        cooldown_seconds: 30
       graph:
         nodes:
           - id: start
@@ -745,16 +805,32 @@ flows:
             position_x: 80
             position_y: 80
             width: 480
-            height: 180
+            height: 260
             data:
               label: Target routers
               runtime_layout: card
               collapsible: false
-          - id: f_targets
+          - id: f_provider
             kind: field
             parent_id: sec_targets
             position_x: 40
             position_y: 60
+            data:
+              label: Inventory provider
+              field_id: inventory_provider
+              field_type: core.enum
+              required: false
+              description: >-
+                Optional: health-check only devices owned by one inventory
+                provider (the built-in "local" or the lab git provider).
+              config:
+                option_source:
+                  kind: inventory.providers
+          - id: f_targets
+            kind: field
+            parent_id: sec_targets
+            position_x: 40
+            position_y: 140
             data:
               label: Routers
               field_id: targets
@@ -780,7 +856,15 @@ flows:
                 multiple: true
                 option_source:
                   kind: inventory.devices
-        edges: []
+        edges:
+          # Cascading select: the chosen provider narrows the router picker
+          # via the inventory.devices `provider_id` filter key.
+          - id: e_provider_targets
+            source: f_provider
+            target: f_targets
+            relations:
+              - semantic_type: options_filter
+                value: provider_id
 
   - name: "Net: End-to-end reachability test"
     description: >-
@@ -859,8 +943,17 @@ flows:
               # shell.execute runs ONE command per line (multi-line scripts are
               # split into separate exec channels at render time), so the ping
               # sweep must stay a single line.
+              #
+              # The targets come from an editable CSV attachment, so they are
+              # scrubbed to the character set of an address/hostname before
+              # they are interpolated. That matters because the values land in
+              # the `for` word list: a `;` or `$(...)` surviving to that point
+              # would be shell *syntax*, not data, and no amount of quoting
+              # inside the loop body could rein it back in. The `case` guard
+              # then drops anything starting with `-`, which the character
+              # filter cannot catch and `ping` would read as an option.
               commands:
-                - 'FAIL=0; for t in {{ inputs.ping_targets | join(" ") }}; do echo "--- ping $t ---"; ping -c 3 -W 2 "$t" || FAIL=1; done; exit $FAIL'
+                - 'FAIL=0; for t in {{ inputs.ping_targets | join(" ") | regex_replace("[^0-9A-Za-z.:_ -]", "") }}; do case "$t" in -*) echo "skipping invalid target: $t"; FAIL=1; continue;; esac; echo "--- ping $t ---"; ping -c 3 -W 2 "$t" || FAIL=1; done; exit $FAIL'
             policy:
               timeout_sec: 180
               retries: 0
@@ -941,16 +1034,38 @@ flows:
             position_x: 620
             position_y: 80
             width: 520
-            height: 220
+            height: 300
             data:
               label: Destinations
               runtime_layout: card
               collapsible: false
-          - id: f_ping_targets
+          # The destination catalog lives in a CSV attachment on this flow
+          # (data/ping-destinations.csv) instead of a hard-coded list: edit the
+          # file on the Files tab and the options change — no flow edit needed.
+          - id: f_dest_area
             kind: field
             parent_id: sec_destinations
             position_x: 40
             position_y: 60
+            data:
+              label: Destination area
+              field_id: dest_area
+              field_type: core.enum
+              required: false
+              description: >-
+                Optional: narrow the destination list to one lab area. Options
+                are the distinct `area` values from the attached CSV.
+              config:
+                option_source:
+                  kind: attachment.csv
+                  config:
+                    filename: data/ping-destinations.csv
+                    value_column: area
+          - id: f_ping_targets
+            kind: field
+            parent_id: sec_destinations
+            position_x: 40
+            position_y: 140
             data:
               label: Ping destinations
               field_id: ping_targets
@@ -959,22 +1074,30 @@ flows:
               default_value:
                 - "10.101.1.10"
                 - "10.104.1.10"
-              description: Lab addresses each source host must reach.
+              description: Lab addresses each source host must reach (from the attached CSV).
               config:
                 multiple: true
                 option_source:
-                  kind: core.static
-                  static_options:
-                    - value: "10.101.1.10"
-                      label: dc1-srv-01 (Lab DC1 endpoint LAN)
-                    - value: "10.104.1.10"
-                      label: dc2-srv-01 (Lab DC2 endpoint LAN)
-                    - value: "10.102.1.10"
-                      label: br1-srv-01 (Lab Branch 1 endpoint LAN)
-                    - value: "10.103.1.10"
-                      label: br2-srv-01 (Lab Branch 2 endpoint LAN)
-                    - value: "10.255.255.1"
-                      label: dc1-core-01 loopback (backbone)
-                    - value: "10.255.255.9"
-                      label: dc2-core-01 loopback (backbone)
-        edges: []
+                  kind: attachment.csv
+                  config:
+                    filename: data/ping-destinations.csv
+                    value_column: address
+                    label_column: name
+                    description_column: area
+        edges:
+          # Cascading select across two columns of the SAME CSV: the chosen
+          # area filters destination rows by their `area` column.
+          - id: e_area_targets
+            source: f_dest_area
+            target: f_ping_targets
+            relations:
+              - semantic_type: options_filter
+                value: area
+
+flow_attachments:
+  # Destination catalog for "Net: End-to-end reachability test": its launch
+  # form reads options straight from this CSV (attachment.csv option source),
+  # with the `area` column powering a cascading area → destination select.
+  - flow: "Net: End-to-end reachability test"
+    filename: data/ping-destinations.csv
+    content_file: src/files/lab/ping-destinations.csv

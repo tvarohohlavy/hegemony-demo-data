@@ -8,6 +8,9 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import io
+import ipaddress
 import re
 import sys
 from pathlib import Path
@@ -406,6 +409,85 @@ def _derive_site_path(sites_root: Path, site_file: Path) -> str:
     return f"{dir_path}/{site_file.stem}" if dir_path != "." else site_file.stem
 
 
+# Columns the reachability flow reads out of ping-destinations.csv: `address`
+# is the ping target, `area` drives the cascade, `name` is the option label.
+_PING_REQUIRED_COLUMNS = ("address", "area", "name")
+
+# A DNS label: alphanumeric, inner hyphens allowed, 63 chars max.
+_DNS_LABEL_RE = re.compile(r"^[0-9A-Za-z](?:[0-9A-Za-z-]{0,61}[0-9A-Za-z])?$")
+
+
+def _is_ping_address(value: str) -> bool:
+    """Whether ``value`` is a bare IP literal or DNS hostname.
+
+    The reachability flow interpolates these into a shell command (scrubbed at
+    render time), so anything that is not plainly an address is rejected here.
+    """
+    if not value or len(value) > 253:
+        return False
+    # ipaddress accepts scoped literals like "fe80::1%eth0", but the flow's
+    # render-time scrub drops "%" — the target would reach ping mangled, so
+    # reject it here rather than ship something that cannot work.
+    if "%" in value:
+        return False
+    try:
+        ipaddress.ip_address(value)
+    except ValueError:
+        return all(_DNS_LABEL_RE.match(label) for label in value.split("."))
+    else:
+        return True
+
+
+def validate_lab_csv_attachments(root: Path) -> list[str]:
+    """Validate CSV attachments whose values reach a shell command.
+
+    ``ping-destinations.csv`` feeds the reachability sweep's target list. The
+    flow scrubs the values before interpolating them, but a shipped CSV should
+    never rely on that: catching a bad address here fails the build with a
+    clear message instead of silently pinging a mangled target. Parsed with
+    ``csv`` (not naive comma splitting) so it agrees with the backend's own
+    reader about quoting.
+    """
+    errors: list[str] = []
+    csv_path = root / "src" / "files" / "lab" / "ping-destinations.csv"
+    rel = csv_path.relative_to(root)
+    # The reachability flow names this file as its option source, so a missing
+    # one means shipping a destination selector with nothing in it.
+    if not csv_path.is_file():
+        return [f"{rel}: file is missing or not a regular file"]
+    reader = csv.DictReader(io.StringIO(csv_path.read_text(encoding="utf-8")))
+    if reader.fieldnames is None:
+        return [f"{rel}: file is empty"]
+
+    # Normalize in place, not into a copy: DictReader keys every row by
+    # whatever is in `fieldnames`, so stripping a separate set would accept a
+    # header like "address " and then read every row as missing its address.
+    normalized = [(name or "").strip() for name in reader.fieldnames]
+    duplicates = sorted({name for name in normalized if normalized.count(name) > 1})
+    if duplicates:
+        # DictReader keeps only the last column of a repeated name, so the
+        # earlier one's values would vanish without a word.
+        return [f"{rel}: duplicate column name(s) after trimming: {', '.join(duplicates)}"]
+    reader.fieldnames = normalized
+    header = set(normalized)
+    missing = [column for column in _PING_REQUIRED_COLUMNS if column not in header]
+    if missing:
+        return [f"{rel}: missing required column(s): {', '.join(missing)}"]
+
+    # Row 1 is the header, so data rows start at line 2.
+    for line_number, row in enumerate(reader, start=2):
+        address = (row.get("address") or "").strip()
+        if not address:
+            errors.append(f"{rel}:{line_number}: row has no address")
+            continue
+        if not _is_ping_address(address):
+            errors.append(
+                f"{rel}:{line_number}: address {address!r} is not a bare "
+                "IP address or hostname"
+            )
+    return errors
+
+
 def validate_inventory_tree(root: Path) -> list[str]:
     """Validate the git-provider inventory tree under ``demo-inventory/``.
 
@@ -616,6 +698,7 @@ def main() -> int:
                 ).validate()
             )
         errors.extend(validate_inventory_tree(ROOT / "demo-inventory"))
+        errors.extend(validate_lab_csv_attachments(ROOT))
     except Exception as exc:
         print(f"validate.py: {exc}", file=sys.stderr)
         return 2
