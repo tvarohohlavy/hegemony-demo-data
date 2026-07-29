@@ -427,10 +427,10 @@ def _is_ping_address(value: str) -> bool:
         return False
     try:
         ipaddress.ip_address(value)
-        return True
     except ValueError:
-        pass
-    return all(_DNS_LABEL_RE.match(label) for label in value.split("."))
+        return all(_DNS_LABEL_RE.match(label) for label in value.split("."))
+    else:
+        return True
 
 
 def validate_lab_csv_attachments(root: Path) -> list[str]:
@@ -452,7 +452,11 @@ def validate_lab_csv_attachments(root: Path) -> list[str]:
     if reader.fieldnames is None:
         return [f"{rel}: file is empty"]
 
-    header = {(name or "").strip() for name in reader.fieldnames}
+    # Normalize in place, not into a copy: DictReader keys every row by
+    # whatever is in `fieldnames`, so stripping a separate set would accept a
+    # header like "address " and then read every row as missing its address.
+    reader.fieldnames = [(name or "").strip() for name in reader.fieldnames]
+    header = set(reader.fieldnames)
     missing = [column for column in _PING_REQUIRED_COLUMNS if column not in header]
     if missing:
         return [f"{rel}: missing required column(s): {', '.join(missing)}"]
