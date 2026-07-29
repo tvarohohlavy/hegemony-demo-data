@@ -425,6 +425,11 @@ def _is_ping_address(value: str) -> bool:
     """
     if not value or len(value) > 253:
         return False
+    # ipaddress accepts scoped literals like "fe80::1%eth0", but the flow's
+    # render-time scrub drops "%" — the target would reach ping mangled, so
+    # reject it here rather than ship something that cannot work.
+    if "%" in value:
+        return False
     try:
         ipaddress.ip_address(value)
     except ValueError:
@@ -445,9 +450,11 @@ def validate_lab_csv_attachments(root: Path) -> list[str]:
     """
     errors: list[str] = []
     csv_path = root / "src" / "files" / "lab" / "ping-destinations.csv"
-    if not csv_path.exists():
-        return errors
     rel = csv_path.relative_to(root)
+    # The reachability flow names this file as its option source, so a missing
+    # one means shipping a destination selector with nothing in it.
+    if not csv_path.is_file():
+        return [f"{rel}: file is missing or not a regular file"]
     reader = csv.DictReader(io.StringIO(csv_path.read_text(encoding="utf-8")))
     if reader.fieldnames is None:
         return [f"{rel}: file is empty"]
@@ -455,8 +462,14 @@ def validate_lab_csv_attachments(root: Path) -> list[str]:
     # Normalize in place, not into a copy: DictReader keys every row by
     # whatever is in `fieldnames`, so stripping a separate set would accept a
     # header like "address " and then read every row as missing its address.
-    reader.fieldnames = [(name or "").strip() for name in reader.fieldnames]
-    header = set(reader.fieldnames)
+    normalized = [(name or "").strip() for name in reader.fieldnames]
+    duplicates = sorted({name for name in normalized if normalized.count(name) > 1})
+    if duplicates:
+        # DictReader keeps only the last column of a repeated name, so the
+        # earlier one's values would vanish without a word.
+        return [f"{rel}: duplicate column name(s) after trimming: {', '.join(duplicates)}"]
+    reader.fieldnames = normalized
+    header = set(normalized)
     missing = [column for column in _PING_REQUIRED_COLUMNS if column not in header]
     if missing:
         return [f"{rel}: missing required column(s): {', '.join(missing)}"]
