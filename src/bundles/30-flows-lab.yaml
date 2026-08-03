@@ -175,30 +175,41 @@ flows:
                     alpine:3.20 \
                     sh -c '
                       set -e
+                      # --restart unless-stopped re-runs this whole script on
+                      # every restart (so the bastion survives a dind bounce,
+                      # same lifecycle as Gitea). The container filesystem
+                      # persists across restarts, so this MUST be idempotent:
+                      # a second `adduser` or a `git clone` into an existing
+                      # dir fails under `set -e` and wedges the bastion in a
+                      # crash loop with the listeners down. Guard every one-time
+                      # setup step and only (re)start the daemons at the end.
+                      #
                       # microsocks is not in the alpine:3.20 stable repos
                       # (main/community) — only in edge/testing — so build the
-                      # tiny single-binary SOCKS5 server from source rather than
-                      # apk-installing it. build-base + git are dropped again
-                      # once the static-ish binary is in place.
-                      apk add --no-cache openssh >/dev/null
-                      apk add --no-cache --virtual .ms-build build-base git >/dev/null
-                      git clone --depth 1 https://github.com/rofl0r/microsocks /tmp/microsocks >/dev/null 2>&1
-                      make -C /tmp/microsocks >/dev/null
-                      install -m 0755 /tmp/microsocks/microsocks /usr/local/bin/microsocks
-                      apk del .ms-build >/dev/null
-                      rm -rf /tmp/microsocks
-                      adduser -D "$JUMP_USER"
+                      # tiny single-binary SOCKS5 server from source. build-base
+                      # + git are dropped again once the binary is in place.
+                      [ -x /usr/sbin/sshd ] || apk add --no-cache openssh >/dev/null
+                      if [ ! -x /usr/local/bin/microsocks ]; then
+                        apk add --no-cache --virtual .ms-build build-base git >/dev/null
+                        rm -rf /tmp/microsocks
+                        git clone --depth 1 https://github.com/rofl0r/microsocks /tmp/microsocks >/dev/null 2>&1
+                        make -C /tmp/microsocks >/dev/null
+                        install -m 0755 /tmp/microsocks/microsocks /usr/local/bin/microsocks
+                        apk del .ms-build >/dev/null
+                        rm -rf /tmp/microsocks
+                      fi
+                      # Create the user once; always (re)set the password so a
+                      # credential rotation still takes effect on a restart.
+                      id "$JUMP_USER" >/dev/null 2>&1 || adduser -D "$JUMP_USER"
                       printf "%s:%s\n" "$JUMP_USER" "$JUMP_PASSWORD" | chpasswd
                       # Generate the host key explicitly instead of trusting
                       # `ssh-keygen -A`: freshly-pulled alpine:3.20 openssh
                       # builds have shipped where -A leaves no usable host key
                       # and sshd exits "no hostkeys available -- exiting". An
-                      # ed25519 key (every transport here supports it) written
-                      # to a known path, passed with -h, makes startup
-                      # deterministic. rm -f first so a placeholder key from the
-                      # base image can never turn keygen into a no-op prompt.
-                      rm -f /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key.pub
-                      ssh-keygen -q -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ""
+                      # ed25519 key (every transport here supports it) passed
+                      # with -h makes startup deterministic; reuse an existing
+                      # key so the bastion identity stays stable across restarts.
+                      [ -s /etc/ssh/ssh_host_ed25519_key ] || ssh-keygen -q -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ""
                       # ProxyJump opens a direct-tcpip channel to the device, so
                       # the bastion needs TCP forwarding. Alpine's openssh ships
                       # AllowTcpForwarding=no by default (aports
@@ -206,6 +217,7 @@ flows:
                       # default-on — so re-enable it explicitly, or sshd refuses
                       # the hop with "administratively prohibited". Password auth
                       # is the jump credential the inventory provider ships.
+                      echo "bastion: setup ok; starting sshd (:22) + microsocks (:1080)"
                       /usr/sbin/sshd -h /etc/ssh/ssh_host_ed25519_key -o PasswordAuthentication=yes -o PermitRootLogin=no -o AllowTcpForwarding=yes
                       # RFC 1929: the SOCKS listener always authenticates —
                       # neither published port is an open proxy.
