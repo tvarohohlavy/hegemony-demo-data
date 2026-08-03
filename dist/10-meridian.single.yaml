@@ -575,18 +575,23 @@ flows:
             \ edits anywhere.\n# --restart brings it back after a dind restart (same\n# lifecycle as Gitea); redeploying the\
             \ lab recreates it.\ndocker run -d --name meridian-bastion \\\n  --restart unless-stopped \\\n  --network meridian-lab-mgmt\
             \ \\\n  -p 2222:22 -p 1080:1080 \\\n  -e JUMP_USER=\"$JUMP_USER\" \\\n  -e JUMP_PASSWORD=\"$JUMP_PASSWORD\" \\\
-            \n  alpine:3.20 \\\n  sh -c '\n    set -e\n    apk add --no-cache openssh microsocks >/dev/null\n    adduser -D\
-            \ \"$JUMP_USER\"\n    printf \"%s:%s\\n\" \"$JUMP_USER\" \"$JUMP_PASSWORD\" | chpasswd\n    ssh-keygen -A\n  \
-            \  # ProxyJump only needs direct-tcpip forwarding (sshd\n    # default-on); password auth is what the inventory\n\
-            \    # provider ships as the jump credential.\n    /usr/sbin/sshd -o PasswordAuthentication=yes -o PermitRootLogin=no\n\
-            \    # RFC 1929: the SOCKS listener always authenticates —\n    # neither published port is an open proxy.\n \
-            \   exec microsocks -u \"$JUMP_USER\" -P \"$JUMP_PASSWORD\" -p 1080\n  '\n# docker run -d only proves creation;\
-            \ the listeners come up\n# after an apk install inside the container. Gate on both\n# ports (published in the\
-            \ dind netns — network_mode: host\n# here IS that netns) so the approval gate can never be\n# reached while the\
-            \ only worker access path is down.\nfor i in $(seq 1 60); do\n  if nc -z 127.0.0.1 2222 2>/dev/null && nc -z 127.0.0.1\
-            \ 1080 2>/dev/null; then\n    echo \"Bastion ready: SSH ProxyJump dind:2222, SOCKS5 dind:1080.\"\n    exit 0\n\
-            \  fi\n  sleep 2\ndone\necho \"TIMEOUT waiting for bastion listeners (2222/1080)\" >&2\ndocker logs meridian-bastion\
-            \ 2>&1 | tail -50 || true\nexit 1\n"
+            \n  alpine:3.20 \\\n  sh -c '\n    set -e\n    # microsocks is not in the alpine:3.20 stable repos\n    # (main/community)\
+            \ — only in edge/testing — so build the\n    # tiny single-binary SOCKS5 server from source rather than\n    #\
+            \ apk-installing it. build-base + git are dropped again\n    # once the static-ish binary is in place.\n    apk\
+            \ add --no-cache openssh >/dev/null\n    apk add --no-cache --virtual .ms-build build-base git >/dev/null\n  \
+            \  git clone --depth 1 https://github.com/rofl0r/microsocks /tmp/microsocks >/dev/null 2>&1\n    make -C /tmp/microsocks\
+            \ >/dev/null\n    install -m 0755 /tmp/microsocks/microsocks /usr/local/bin/microsocks\n    apk del .ms-build\
+            \ >/dev/null\n    rm -rf /tmp/microsocks\n    adduser -D \"$JUMP_USER\"\n    printf \"%s:%s\\n\" \"$JUMP_USER\"\
+            \ \"$JUMP_PASSWORD\" | chpasswd\n    ssh-keygen -A\n    # ProxyJump only needs direct-tcpip forwarding (sshd\n\
+            \    # default-on); password auth is what the inventory\n    # provider ships as the jump credential.\n    /usr/sbin/sshd\
+            \ -o PasswordAuthentication=yes -o PermitRootLogin=no\n    # RFC 1929: the SOCKS listener always authenticates\
+            \ —\n    # neither published port is an open proxy.\n    exec microsocks -u \"$JUMP_USER\" -P \"$JUMP_PASSWORD\"\
+            \ -p 1080\n  '\n# docker run -d only proves creation; the listeners come up\n# after an apk install inside the\
+            \ container. Gate on both\n# ports (published in the dind netns — network_mode: host\n# here IS that netns) so\
+            \ the approval gate can never be\n# reached while the only worker access path is down.\nfor i in $(seq 1 60);\
+            \ do\n  if nc -z 127.0.0.1 2222 2>/dev/null && nc -z 127.0.0.1 1080 2>/dev/null; then\n    echo \"Bastion ready:\
+            \ SSH ProxyJump dind:2222, SOCKS5 dind:1080.\"\n    exit 0\n  fi\n  sleep 2\ndone\necho \"TIMEOUT waiting for\
+            \ bastion listeners (2222/1080)\" >&2\ndocker logs meridian-bastion 2>&1 | tail -50 || true\nexit 1\n"
       - id: wait_ready
         name: Wait for FRR to answer on all routers
         type: step

@@ -175,7 +175,18 @@ flows:
                     alpine:3.20 \
                     sh -c '
                       set -e
-                      apk add --no-cache openssh microsocks >/dev/null
+                      # microsocks is not in the alpine:3.20 stable repos
+                      # (main/community) — only in edge/testing — so build the
+                      # tiny single-binary SOCKS5 server from source rather than
+                      # apk-installing it. build-base + git are dropped again
+                      # once the static-ish binary is in place.
+                      apk add --no-cache openssh >/dev/null
+                      apk add --no-cache --virtual .ms-build build-base git >/dev/null
+                      git clone --depth 1 https://github.com/rofl0r/microsocks /tmp/microsocks >/dev/null 2>&1
+                      make -C /tmp/microsocks >/dev/null
+                      install -m 0755 /tmp/microsocks/microsocks /usr/local/bin/microsocks
+                      apk del .ms-build >/dev/null
+                      rm -rf /tmp/microsocks
                       adduser -D "$JUMP_USER"
                       printf "%s:%s\n" "$JUMP_USER" "$JUMP_PASSWORD" | chpasswd
                       ssh-keygen -A
