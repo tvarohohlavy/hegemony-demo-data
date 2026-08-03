@@ -36,6 +36,15 @@ inventory_providers:
         ssh:
           username_ref: "{{ secret('vault://orgs/default/secrets/meridian/lab/ssh/username') }}"
           password_ref: "{{ secret('vault://orgs/default/secrets/meridian/lab/ssh/password') }}"
+        # Every lab device is reached through the bastion the Bootstrap flow
+        # deploys inside the sandbox daemon: SSH sessions ProxyJump via
+        # dind:2222 (the bastion's publish in the dind netns), so the workers
+        # need no route into the lab subnet at all.
+        jump_host:
+          host: dind
+          port: 2222
+          username_ref: "{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/username') }}"
+          password_ref: "{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/password') }}"
       query_cache_ttl_seconds: 60
 
   - name: netbox-example

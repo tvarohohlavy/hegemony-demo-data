@@ -108,8 +108,9 @@ appears as part of a story rather than a feature checklist:
 Start by running **"Lab: Provision and tear down demo datacenter"** — it builds
 the lab images, deploys a multi-area OSPF topology of eleven routers and four
 Linux endpoint hosts (two lab datacenters with backbone ABRs plus two
-branches), opens the routed path from the Hegemony workers into the lab
-network (the lab runs inside the platform's dind sandbox daemon), and
+branches), deploys the lab bastion the workers tunnel through — SSH
+ProxyJump plus an authenticated SOCKS5 proxy, no host routing into the lab
+network (the lab runs inside the platform's dind sandbox daemon) — and
 (optionally) stands up a local Gitea for config backups, then parks
 on an approval gate **with no expiry**. While the run is held there the lab keeps
 running, so you can SSH to the routers and exercise the other flows against them;

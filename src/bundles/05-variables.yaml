@@ -46,7 +46,10 @@ variables:
     description: Base URL of the demo Gitea service (composed from GITEA_HOST/PORT).
   - name: LAB_MGMT_SUBNET
     value: 172.20.30.0/24
-    description: Management subnet containerlab assigns to the FRR lab routers.
+    description: >-
+      Management subnet containerlab assigns to the FRR lab routers
+      (informational — must match topology.clab.yml; workers reach it only
+      through the lab bastion, never by routing).
 
   # --- Shared network services (org standards) --------------------------------
   # The NTP/DNS/SYSLOG standards now live in the SHARED org (Shared Standards),

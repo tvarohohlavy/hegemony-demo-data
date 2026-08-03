@@ -714,6 +714,10 @@ flows:
               port: 22
               timeout_sec: 10
               attempts: 2
+              # Workers have no route into the lab subnet; TCP probes ride
+              # the lab bastion's authenticated SOCKS5 listener instead
+              # (dind:1080, deployed by the Bootstrap flow).
+              socks_proxy: "socks5://{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/username') }}:{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/password') }}@dind:1080"
             policy:
               timeout_sec: 60
               retries: 0
@@ -896,6 +900,10 @@ flows:
               port: 22
               timeout_sec: 10
               attempts: 2
+              # Workers have no route into the lab subnet; TCP probes ride
+              # the lab bastion's authenticated SOCKS5 listener instead
+              # (dind:1080, deployed by the Bootstrap flow).
+              socks_proxy: "socks5://{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/username') }}:{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/password') }}@dind:1080"
             policy:
               timeout_sec: 60
               retries: 0

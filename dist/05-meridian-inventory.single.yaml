@@ -39,6 +39,11 @@ inventory_providers:
       ssh:
         username_ref: '{{ secret(''vault://orgs/default/secrets/meridian/lab/ssh/username'') }}'
         password_ref: '{{ secret(''vault://orgs/default/secrets/meridian/lab/ssh/password'') }}'
+      jump_host:
+        host: dind
+        port: 2222
+        username_ref: '{{ secret(''vault://orgs/default/secrets/meridian/lab/bastion/username'') }}'
+        password_ref: '{{ secret(''vault://orgs/default/secrets/meridian/lab/bastion/password'') }}'
     query_cache_ttl_seconds: 60
 - name: netbox-example
   provider_type: netbox

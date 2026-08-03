@@ -22,6 +22,12 @@ secrets:
   values:
     username: clab
     password: demo-lab-password
+- name: meridian-lab-bastion
+  description: Login for the lab bastion (SSH ProxyJump + SOCKS5).
+  folder: orgs/default/secrets/meridian/lab/bastion
+  values:
+    username: jump
+    password: demo-bastion-password
 - name: meridian-prod-ssh
   description: SSH + enable credentials for the production device estate.
   folder: orgs/default/secrets/meridian/prod/ssh
@@ -544,8 +550,8 @@ flows:
           retries: 0
           on_failure: FAIL_RUN
           evidence_required: true
-      - id: connect_workers
-        name: Open lab route for workers
+      - id: deploy_bastion
+        name: Deploy lab bastion (SSH + SOCKS5)
         type: step
         kind: ACTION
         phase: IMPLEMENTATION
@@ -555,22 +561,27 @@ flows:
         params:
           image: ghcr.io/srl-labs/clab:0.77.0
           working_dir: /workspace
+          attach_docker_socket: true
           network_mode: host
-          privileged: true
-          timeout_seconds: 120
+          timeout_seconds: 180
+          env:
+            JUMP_USER: '{{ secret(''vault://orgs/default/secrets/meridian/lab/bastion/username'') }}'
+            JUMP_PASSWORD: '{{ secret(''vault://orgs/default/secrets/meridian/lab/bastion/password'') }}'
           command:
-          - "set -e\n# The lab bridge lives inside the platform's dind sandbox\n# daemon, and the Hegemony workers reach it\
-            \ through a routed\n# hop: a host route (installed by the stack's\n# lab-route-installer sidecar) points {{ vars.LAB_MGMT_SUBNET\
-            \ }}\n# at dind, and this step opens the dind side — forwarding plus\n# DOCKER-USER accepts in the dind netns,\
-            \ which is exactly what\n# network_mode: host means here. Idempotent and re-run by\n# every lab deploy; dind-netns\
-            \ rules evaporate on a dind\n# restart, so redeploying the lab restores them.\nsysctl -w net.ipv4.ip_forward=1\n\
-            # The comment match marks the rules as this flow's own, so\n# teardown deletes exactly what deploy added and never\
-            \ a\n# rule some other component placed for the same subnet.\niptables -C DOCKER-USER -d {{ vars.LAB_MGMT_SUBNET\
-            \ }} -m comment --comment meridian-lab-route -j ACCEPT 2>/dev/null \\\n  || iptables -I DOCKER-USER -d {{ vars.LAB_MGMT_SUBNET\
-            \ }} -m comment --comment meridian-lab-route -j ACCEPT\niptables -C DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET }}\
-            \ -m comment --comment meridian-lab-route -j ACCEPT 2>/dev/null \\\n  || iptables -I DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET\
-            \ }} -m comment --comment meridian-lab-route -j ACCEPT\necho \"Opened worker route into {{ vars.LAB_MGMT_SUBNET\
-            \ }} (dind-side forwarding + DOCKER-USER accepts)\"\n"
+          - "set -e\ndocker rm -f meridian-bastion 2>/dev/null || true\n# The bastion is the workers' ONLY path into the lab\n\
+            # (design: dind-sandbox §11): device SSH sessions ProxyJump\n# through :2222 and TCP probes ride the authenticated\
+            \ SOCKS5\n# listener on :1080. Both publishes bind in the dind netns —\n# workers reach them as dind:2222 / dind:1080\
+            \ over the\n# compose network, and nothing is published to the host. No\n# host route, no ip_forward, no DOCKER-USER\
+            \ edits anywhere.\n# --restart brings it back after a dind restart (same\n# lifecycle as Gitea); redeploying the\
+            \ lab recreates it.\ndocker run -d --name meridian-bastion \\\n  --restart unless-stopped \\\n  --network meridian-lab-mgmt\
+            \ \\\n  -p 2222:22 -p 1080:1080 \\\n  -e JUMP_USER=\"$JUMP_USER\" \\\n  -e JUMP_PASSWORD=\"$JUMP_PASSWORD\" \\\
+            \n  alpine:3.20 \\\n  sh -c '\n    set -e\n    apk add --no-cache openssh microsocks >/dev/null\n    adduser -D\
+            \ \"$JUMP_USER\"\n    printf \"%s:%s\\n\" \"$JUMP_USER\" \"$JUMP_PASSWORD\" | chpasswd\n    ssh-keygen -A\n  \
+            \  # ProxyJump only needs direct-tcpip forwarding (sshd\n    # default-on); password auth is what the inventory\n\
+            \    # provider ships as the jump credential.\n    /usr/sbin/sshd -o PasswordAuthentication=yes -o PermitRootLogin=no\n\
+            \    # RFC 1929: the SOCKS listener always authenticates —\n    # neither published port is an open proxy.\n \
+            \   exec microsocks -u \"$JUMP_USER\" -P \"$JUMP_PASSWORD\" -p 1080\n  '\necho \"Bastion up: SSH ProxyJump dind:2222,\
+            \ SOCKS5 dind:1080.\"\n"
       - id: wait_ready
         name: Wait for FRR to answer on all routers
         type: step
@@ -701,17 +712,13 @@ flows:
             \ -p \"${WORKDIR}\"\nif [ ! -f \"${TOPOLOGY}\" ]; then\n  cp -ar /attachments/* \"${WORKDIR}/\" 2>/dev/null ||\
             \ true\n  sed \\\n    -e \"s#__HEGEMONY_CLAB_NAME__#${LAB_NAME}#g\" \\\n    -e \"s#__HEGEMONY_CLAB_WORKDIR__#${WORKDIR}#g\"\
             \ \\\n    \"${WORKDIR}/topology.clab.yml\" > \"${TOPOLOGY}\"\nfi\ncontainerlab destroy -t \"${TOPOLOGY}\" --cleanup\
-            \ || true\n# Close the worker route opened at deploy time: without the\n# lab these DOCKER-USER accepts would\
-            \ let a future network\n# reusing {{ vars.LAB_MGMT_SUBNET }} inherit worker access.\n# The comment match limits\
-            \ deletion to rules this flow owns\n# (deploy's -C guard keeps them single), so teardown cannot\n# remove another\
-            \ component's policy for the same subnet.\niptables -D DOCKER-USER -d {{ vars.LAB_MGMT_SUBNET }} -m comment --comment\
-            \ meridian-lab-route -j ACCEPT 2>/dev/null || true\niptables -D DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET }} -m comment\
-            \ --comment meridian-lab-route -j ACCEPT 2>/dev/null || true\n# Workers are not containers of the sandbox daemon\
-            \ (they reach\n# the lab over a routed hop, not docker network connect), so\n# there is nothing to detach before\
-            \ removing the network.\ndocker network rm meridian-lab-mgmt 2>/dev/null || true\nrm -rf \"${WORKDIR}\" || true\n\
-            REMOVE_GITEA=$(printf '%s' \"{{ inputs.remove_gitea }}\" | tr 'A-Z' 'a-z')\ncase \"$REMOVE_GITEA\" in\n  true|1|yes)\n\
-            \    docker rm -f meridian-gitea 2>/dev/null || true\n    echo \"Removed Gitea container.\"\n    ;;\nesac\necho\
-            \ \"Teardown complete.\"\n"
+            \ || true\n# The bastion is the only non-clab endpoint on the mgmt\n# network: remove it first so the network\
+            \ rm cannot fail on\n# an attached container. Workers never attach to sandbox\n# networks — they reach the lab\
+            \ through the bastion — so\n# nothing else needs detaching.\ndocker rm -f meridian-bastion 2>/dev/null || true\n\
+            docker network rm meridian-lab-mgmt 2>/dev/null || true\nrm -rf \"${WORKDIR}\" || true\nREMOVE_GITEA=$(printf\
+            \ '%s' \"{{ inputs.remove_gitea }}\" | tr 'A-Z' 'a-z')\ncase \"$REMOVE_GITEA\" in\n  true|1|yes)\n    docker rm\
+            \ -f meridian-gitea 2>/dev/null || true\n    echo \"Removed Gitea container.\"\n    ;;\nesac\necho \"Teardown\
+            \ complete.\"\n"
         policy:
           timeout_sec: 330
           retries: 0
@@ -751,17 +758,17 @@ flows:
       - id: e_fork_gitea
         source: fork:fork
         target: deploy_gitea
-      - id: e_lab_connect
+      - id: e_lab_bastion
         source: deploy_lab:success
-        target: connect_workers
+        target: deploy_bastion
       - id: e_lab_join_fail
         source: deploy_lab:failure
         target: join
-      - id: e_connect_wait
-        source: connect_workers:success
+      - id: e_bastion_wait
+        source: deploy_bastion:success
         target: wait_ready
-      - id: e_connect_join_fail
-        source: connect_workers:failure
+      - id: e_bastion_join_fail
+        source: deploy_bastion:failure
         target: join
       - id: e_wait_join
         source: wait_ready:success
@@ -1443,6 +1450,8 @@ flows:
           port: 22
           timeout_sec: 10
           attempts: 2
+          socks_proxy: socks5://{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/username') }}:{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/password')
+            }}@dind:1080
         policy:
           timeout_sec: 60
           retries: 0
@@ -1615,6 +1624,8 @@ flows:
           port: 22
           timeout_sec: 10
           attempts: 2
+          socks_proxy: socks5://{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/username') }}:{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/password')
+            }}@dind:1080
         policy:
           timeout_sec: 60
           retries: 0
@@ -3752,7 +3763,8 @@ variables:
   description: Base URL of the demo Gitea service (composed from GITEA_HOST/PORT).
 - name: LAB_MGMT_SUBNET
   value: 172.20.30.0/24
-  description: Management subnet containerlab assigns to the FRR lab routers.
+  description: Management subnet containerlab assigns to the FRR lab routers (informational — must match topology.clab.yml;
+    workers reach it only through the lab bastion, never by routing).
 notification_destinations:
 - name: Meridian NOC Email
   type: email
