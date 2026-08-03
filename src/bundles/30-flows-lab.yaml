@@ -189,16 +189,24 @@ flows:
                       rm -rf /tmp/microsocks
                       adduser -D "$JUMP_USER"
                       printf "%s:%s\n" "$JUMP_USER" "$JUMP_PASSWORD" | chpasswd
-                      ssh-keygen -A
-                      # ProxyJump opens a direct-tcpip channel to the device,
-                      # so the bastion needs TCP forwarding. Alpine's openssh
-                      # ships AllowTcpForwarding=no by default (aports
+                      # Generate the host key explicitly instead of trusting
+                      # `ssh-keygen -A`: freshly-pulled alpine:3.20 openssh
+                      # builds have shipped where -A leaves no usable host key
+                      # and sshd exits "no hostkeys available -- exiting". An
+                      # ed25519 key (every transport here supports it) written
+                      # to a known path, passed with -h, makes startup
+                      # deterministic. rm -f first so a placeholder key from the
+                      # base image can never turn keygen into a no-op prompt.
+                      rm -f /etc/ssh/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key.pub
+                      ssh-keygen -q -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ""
+                      # ProxyJump opens a direct-tcpip channel to the device, so
+                      # the bastion needs TCP forwarding. Alpine's openssh ships
+                      # AllowTcpForwarding=no by default (aports
                       # disable-forwarding-by-default.patch) — NOT the upstream
-                      # default-on — so it must be re-enabled explicitly, or
-                      # sshd refuses the hop with "administratively prohibited".
-                      # Password auth is the jump credential the inventory
-                      # provider ships.
-                      /usr/sbin/sshd -o PasswordAuthentication=yes -o PermitRootLogin=no -o AllowTcpForwarding=yes
+                      # default-on — so re-enable it explicitly, or sshd refuses
+                      # the hop with "administratively prohibited". Password auth
+                      # is the jump credential the inventory provider ships.
+                      /usr/sbin/sshd -h /etc/ssh/ssh_host_ed25519_key -o PasswordAuthentication=yes -o PermitRootLogin=no -o AllowTcpForwarding=yes
                       # RFC 1929: the SOCKS listener always authenticates —
                       # neither published port is an open proxy.
                       exec microsocks -u "$JUMP_USER" -P "$JUMP_PASSWORD" -p 1080

@@ -582,21 +582,27 @@ flows:
             \  git clone --depth 1 https://github.com/rofl0r/microsocks /tmp/microsocks >/dev/null 2>&1\n    make -C /tmp/microsocks\
             \ >/dev/null\n    install -m 0755 /tmp/microsocks/microsocks /usr/local/bin/microsocks\n    apk del .ms-build\
             \ >/dev/null\n    rm -rf /tmp/microsocks\n    adduser -D \"$JUMP_USER\"\n    printf \"%s:%s\\n\" \"$JUMP_USER\"\
-            \ \"$JUMP_PASSWORD\" | chpasswd\n    ssh-keygen -A\n    # ProxyJump opens a direct-tcpip channel to the device,\n\
-            \    # so the bastion needs TCP forwarding. Alpine's openssh\n    # ships AllowTcpForwarding=no by default (aports\n\
-            \    # disable-forwarding-by-default.patch) — NOT the upstream\n    # default-on — so it must be re-enabled explicitly,\
-            \ or\n    # sshd refuses the hop with \"administratively prohibited\".\n    # Password auth is the jump credential\
-            \ the inventory\n    # provider ships.\n    /usr/sbin/sshd -o PasswordAuthentication=yes -o PermitRootLogin=no\
-            \ -o AllowTcpForwarding=yes\n    # RFC 1929: the SOCKS listener always authenticates —\n    # neither published\
-            \ port is an open proxy.\n    exec microsocks -u \"$JUMP_USER\" -P \"$JUMP_PASSWORD\" -p 1080\n  '\n# docker run\
-            \ -d only proves creation; the listeners come up\n# after the in-container build/apk step. Probe them from\n#\
-            \ INSIDE the bastion (alpine busybox `nc -z`, always present)\n# via docker exec, so readiness never depends on\
-            \ whether this\n# clab image ships nc. sshd binds :22 and microsocks :1080\n# internally (published as :2222/:1080\
-            \ in the dind netns). The\n# gate blocks the approval step until the only worker access\n# path is actually up.\n\
-            for i in $(seq 1 60); do\n  if docker exec meridian-bastion sh -c \\\n      'nc -z 127.0.0.1 22 && nc -z 127.0.0.1\
-            \ 1080' 2>/dev/null; then\n    echo \"Bastion ready: SSH ProxyJump dind:2222, SOCKS5 dind:1080.\"\n    exit 0\n\
-            \  fi\n  sleep 2\ndone\necho \"TIMEOUT waiting for bastion listeners (2222/1080)\" >&2\ndocker logs meridian-bastion\
-            \ 2>&1 | tail -50 || true\nexit 1\n"
+            \ \"$JUMP_PASSWORD\" | chpasswd\n    # Generate the host key explicitly instead of trusting\n    # `ssh-keygen\
+            \ -A`: freshly-pulled alpine:3.20 openssh\n    # builds have shipped where -A leaves no usable host key\n    #\
+            \ and sshd exits \"no hostkeys available -- exiting\". An\n    # ed25519 key (every transport here supports it)\
+            \ written\n    # to a known path, passed with -h, makes startup\n    # deterministic. rm -f first so a placeholder\
+            \ key from the\n    # base image can never turn keygen into a no-op prompt.\n    rm -f /etc/ssh/ssh_host_ed25519_key\
+            \ /etc/ssh/ssh_host_ed25519_key.pub\n    ssh-keygen -q -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N \"\"\n \
+            \   # ProxyJump opens a direct-tcpip channel to the device, so\n    # the bastion needs TCP forwarding. Alpine's\
+            \ openssh ships\n    # AllowTcpForwarding=no by default (aports\n    # disable-forwarding-by-default.patch) —\
+            \ NOT the upstream\n    # default-on — so re-enable it explicitly, or sshd refuses\n    # the hop with \"administratively\
+            \ prohibited\". Password auth\n    # is the jump credential the inventory provider ships.\n    /usr/sbin/sshd\
+            \ -h /etc/ssh/ssh_host_ed25519_key -o PasswordAuthentication=yes -o PermitRootLogin=no -o AllowTcpForwarding=yes\n\
+            \    # RFC 1929: the SOCKS listener always authenticates —\n    # neither published port is an open proxy.\n \
+            \   exec microsocks -u \"$JUMP_USER\" -P \"$JUMP_PASSWORD\" -p 1080\n  '\n# docker run -d only proves creation;\
+            \ the listeners come up\n# after the in-container build/apk step. Probe them from\n# INSIDE the bastion (alpine\
+            \ busybox `nc -z`, always present)\n# via docker exec, so readiness never depends on whether this\n# clab image\
+            \ ships nc. sshd binds :22 and microsocks :1080\n# internally (published as :2222/:1080 in the dind netns). The\n\
+            # gate blocks the approval step until the only worker access\n# path is actually up.\nfor i in $(seq 1 60); do\n\
+            \  if docker exec meridian-bastion sh -c \\\n      'nc -z 127.0.0.1 22 && nc -z 127.0.0.1 1080' 2>/dev/null; then\n\
+            \    echo \"Bastion ready: SSH ProxyJump dind:2222, SOCKS5 dind:1080.\"\n    exit 0\n  fi\n  sleep 2\ndone\necho\
+            \ \"TIMEOUT waiting for bastion listeners (2222/1080)\" >&2\ndocker logs meridian-bastion 2>&1 | tail -50 || true\n\
+            exit 1\n"
       - id: wait_ready
         name: Wait for FRR to answer on all routers
         type: step
