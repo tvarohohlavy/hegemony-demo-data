@@ -258,11 +258,17 @@ flows:
                   docker rm -f meridian-gitea 2>/dev/null || true
                   # --restart brings Gitea back after a dind daemon restart
                   # (data is still demo-ephemeral; a redeploy recreates it).
+                  # ROOT_URL stays on the browser-facing address: it controls
+                  # the links and clone URLs Gitea DISPLAYS, and operators
+                  # reach the UI at localhost via the platform's dind port
+                  # re-publish. Flows and the platform API never read
+                  # ROOT_URL — they use the configured {{ vars.GITEA_URL }}
+                  # (http://dind:3000) repository URLs directly.
                   docker run -d --name meridian-gitea \
                     --restart unless-stopped \
                     -p 3000:3000 \
                     -e GITEA__security__INSTALL_LOCK=true \
-                    -e GITEA__server__ROOT_URL="{{ vars.GITEA_URL }}/" \
+                    -e GITEA__server__ROOT_URL="http://localhost:{{ vars.GITEA_PORT }}/" \
                     gitea/gitea:1.22-rootless
                   sh /attachments/seed.sh
           - id: join
@@ -350,6 +356,13 @@ flows:
                       "${WORKDIR}/topology.clab.yml" > "${TOPOLOGY}"
                   fi
                   containerlab destroy -t "${TOPOLOGY}" --cleanup || true
+                  # Close the worker route opened at deploy time: without the
+                  # lab these DOCKER-USER accepts would let a future network
+                  # reusing {{ vars.LAB_MGMT_SUBNET }} inherit worker access.
+                  # The deploy step's -C guard keeps the rules single, so one
+                  # -D per direction restores the prior sandbox policy.
+                  iptables -D DOCKER-USER -d {{ vars.LAB_MGMT_SUBNET }} -j ACCEPT 2>/dev/null || true
+                  iptables -D DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET }} -j ACCEPT 2>/dev/null || true
                   # Workers are not containers of the sandbox daemon (they reach
                   # the lab over a routed hop, not docker network connect), so
                   # there is nothing to detach before removing the network.

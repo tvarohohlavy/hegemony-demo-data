@@ -624,9 +624,12 @@ flows:
           - "DEPLOY=$(printf '%s' \"{{ inputs.deploy_gitea }}\" | tr 'A-Z' 'a-z')\ncase \"$DEPLOY\" in\n  true|1|yes) ;;\n\
             \  *)\n    echo \"Gitea deployment skipped (deploy_gitea unchecked).\"\n    exit 0\n    ;;\nesac\nset -e\ndocker\
             \ rm -f meridian-gitea 2>/dev/null || true\n# --restart brings Gitea back after a dind daemon restart\n# (data\
-            \ is still demo-ephemeral; a redeploy recreates it).\ndocker run -d --name meridian-gitea \\\n  --restart unless-stopped\
-            \ \\\n  -p 3000:3000 \\\n  -e GITEA__security__INSTALL_LOCK=true \\\n  -e GITEA__server__ROOT_URL=\"{{ vars.GITEA_URL\
-            \ }}/\" \\\n  gitea/gitea:1.22-rootless\nsh /attachments/seed.sh\n"
+            \ is still demo-ephemeral; a redeploy recreates it).\n# ROOT_URL stays on the browser-facing address: it controls\n\
+            # the links and clone URLs Gitea DISPLAYS, and operators\n# reach the UI at localhost via the platform's dind\
+            \ port\n# re-publish. Flows and the platform API never read\n# ROOT_URL — they use the configured {{ vars.GITEA_URL\
+            \ }}\n# (http://dind:3000) repository URLs directly.\ndocker run -d --name meridian-gitea \\\n  --restart unless-stopped\
+            \ \\\n  -p 3000:3000 \\\n  -e GITEA__security__INSTALL_LOCK=true \\\n  -e GITEA__server__ROOT_URL=\"http://localhost:{{\
+            \ vars.GITEA_PORT }}/\" \\\n  gitea/gitea:1.22-rootless\nsh /attachments/seed.sh\n"
       - id: join
         name: Datacenter ready
         type: join
@@ -694,11 +697,16 @@ flows:
             \ -p \"${WORKDIR}\"\nif [ ! -f \"${TOPOLOGY}\" ]; then\n  cp -ar /attachments/* \"${WORKDIR}/\" 2>/dev/null ||\
             \ true\n  sed \\\n    -e \"s#__HEGEMONY_CLAB_NAME__#${LAB_NAME}#g\" \\\n    -e \"s#__HEGEMONY_CLAB_WORKDIR__#${WORKDIR}#g\"\
             \ \\\n    \"${WORKDIR}/topology.clab.yml\" > \"${TOPOLOGY}\"\nfi\ncontainerlab destroy -t \"${TOPOLOGY}\" --cleanup\
-            \ || true\n# Workers are not containers of the sandbox daemon (they reach\n# the lab over a routed hop, not docker\
-            \ network connect), so\n# there is nothing to detach before removing the network.\ndocker network rm meridian-lab-mgmt\
-            \ 2>/dev/null || true\nrm -rf \"${WORKDIR}\" || true\nREMOVE_GITEA=$(printf '%s' \"{{ inputs.remove_gitea }}\"\
-            \ | tr 'A-Z' 'a-z')\ncase \"$REMOVE_GITEA\" in\n  true|1|yes)\n    docker rm -f meridian-gitea 2>/dev/null ||\
-            \ true\n    echo \"Removed Gitea container.\"\n    ;;\nesac\necho \"Teardown complete.\"\n"
+            \ || true\n# Close the worker route opened at deploy time: without the\n# lab these DOCKER-USER accepts would\
+            \ let a future network\n# reusing {{ vars.LAB_MGMT_SUBNET }} inherit worker access.\n# The deploy step's -C guard\
+            \ keeps the rules single, so one\n# -D per direction restores the prior sandbox policy.\niptables -D DOCKER-USER\
+            \ -d {{ vars.LAB_MGMT_SUBNET }} -j ACCEPT 2>/dev/null || true\niptables -D DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET\
+            \ }} -j ACCEPT 2>/dev/null || true\n# Workers are not containers of the sandbox daemon (they reach\n# the lab\
+            \ over a routed hop, not docker network connect), so\n# there is nothing to detach before removing the network.\n\
+            docker network rm meridian-lab-mgmt 2>/dev/null || true\nrm -rf \"${WORKDIR}\" || true\nREMOVE_GITEA=$(printf\
+            \ '%s' \"{{ inputs.remove_gitea }}\" | tr 'A-Z' 'a-z')\ncase \"$REMOVE_GITEA\" in\n  true|1|yes)\n    docker rm\
+            \ -f meridian-gitea 2>/dev/null || true\n    echo \"Removed Gitea container.\"\n    ;;\nesac\necho \"Teardown\
+            \ complete.\"\n"
         policy:
           timeout_sec: 330
           retries: 0
@@ -3449,12 +3457,6 @@ flow_attachments:
 
     ansible_connection=ssh
 
-    <<<<<<< HEAD
-
-    ansible_ssh_common_args=-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
-
-    =======
-
     # accept-new pins each host key on first contact and rejects a mid-run change.
 
     # The known-hosts file lives in the throwaway rollout container''s /tmp, so it
@@ -3462,8 +3464,6 @@ flow_attachments:
     # is fresh every run — regenerated lab host keys never conflict across deploys.
 
     ansible_ssh_common_args=-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/lab-known-hosts
-
-    >>>>>>> origin/main
 
     '
 - flow: 'IaC: Ansible server baseline rollout'
@@ -3484,17 +3484,14 @@ flow_attachments:
     \ |\n          {{ tenant }} lab server {{ inventory_hostname }} — baseline managed by Ansible.\n          Golden standards:\
     \ NTP {{ ntp | default('<unset>', true) }} / DNS {{ dns | default('<unset>', true) }} / syslog {{ syslog | default('<unset>',\
     \ true) }}\n\n    - name: Verify the baseline landed\n      ansible.builtin.command: cat /etc/meridian/baseline.env\n\
-    \      register: baseline_check\n      changed_when: false\n\n<<<<<<< HEAD\n    - name: Assert the baseline records this\
-    \ tenant\n      ansible.builtin.assert:\n        that:\n          - \"('TENANT=' + tenant) in baseline_check.stdout\"\n\
-    \        success_msg: \"Baseline present on {{ inventory_hostname }}.\"\n        fail_msg: \"Baseline file on {{ inventory_hostname\
-    \ }} does not record tenant {{ tenant }}.\"\n=======\n    - name: Assert the baseline records every golden standard\n\
+    \      register: baseline_check\n      changed_when: false\n\n    - name: Assert the baseline records every golden standard\n\
     \      ansible.builtin.assert:\n        that:\n          # Non-empty first: a missing org variable renders \"NTP_PRIMARY=\"\
     \n          # and the exact-line check below would vacuously match it.\n          - tenant | length > 0\n          - ntp\
     \ | length > 0\n          - dns | length > 0\n          - syslog | length > 0\n          - \"('TENANT=' + tenant) in baseline_check.stdout_lines\"\
     \n          - \"('NTP_PRIMARY=' + ntp) in baseline_check.stdout_lines\"\n          - \"('DNS_PRIMARY=' + dns) in baseline_check.stdout_lines\"\
     \n          - \"('SYSLOG_PRIMARY=' + syslog) in baseline_check.stdout_lines\"\n        success_msg: \"Baseline present\
     \ on {{ inventory_hostname }}.\"\n        fail_msg: \"Baseline on {{ inventory_hostname }} does not match the golden standards.\"\
-    \n>>>>>>> origin/main\n"
+    \n"
 - flow: 'IaC: Ansible server baseline rollout'
   filename: rolling.sh
   content: "#!/bin/sh\n# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier:\
