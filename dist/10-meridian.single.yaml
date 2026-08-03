@@ -461,8 +461,9 @@ devices:
 flows:
 - name: 'Lab: Provision and tear down demo datacenter'
   description: Build the lab images, deploy the multi-area OSPF lab (11 routers and 4 Linux endpoint hosts across dc1, dc2
-    and two branches), attach the lab network to the workers, and optionally stand up Gitea; then hold at an approval gate
-    (no expiry) so you can interact with the lab. Approve to tear it down, reject to leave it running.
+    and two branches), open the routed path from the workers into the lab network (the lab runs inside the platform's dind
+    sandbox), and optionally stand up Gitea; then hold at an approval gate (no expiry) so you can interact with the lab. Approve
+    to tear it down, reject to leave it running.
   definition:
     run_limits:
       max_concurrent_runs: 1
@@ -563,10 +564,13 @@ flows:
             \ }}\n# at dind, and this step opens the dind side — forwarding plus\n# DOCKER-USER accepts in the dind netns,\
             \ which is exactly what\n# network_mode: host means here. Idempotent and re-run by\n# every lab deploy; dind-netns\
             \ rules evaporate on a dind\n# restart, so redeploying the lab restores them.\nsysctl -w net.ipv4.ip_forward=1\n\
-            iptables -C DOCKER-USER -d {{ vars.LAB_MGMT_SUBNET }} -j ACCEPT 2>/dev/null \\\n  || iptables -I DOCKER-USER -d\
-            \ {{ vars.LAB_MGMT_SUBNET }} -j ACCEPT\niptables -C DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET }} -j ACCEPT 2>/dev/null\
-            \ \\\n  || iptables -I DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET }} -j ACCEPT\necho \"Opened worker route into {{\
-            \ vars.LAB_MGMT_SUBNET }} (dind-side forwarding + DOCKER-USER accepts)\"\n"
+            # The comment match marks the rules as this flow's own, so\n# teardown deletes exactly what deploy added and never\
+            \ a\n# rule some other component placed for the same subnet.\niptables -C DOCKER-USER -d {{ vars.LAB_MGMT_SUBNET\
+            \ }} -m comment --comment meridian-lab-route -j ACCEPT 2>/dev/null \\\n  || iptables -I DOCKER-USER -d {{ vars.LAB_MGMT_SUBNET\
+            \ }} -m comment --comment meridian-lab-route -j ACCEPT\niptables -C DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET }}\
+            \ -m comment --comment meridian-lab-route -j ACCEPT 2>/dev/null \\\n  || iptables -I DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET\
+            \ }} -m comment --comment meridian-lab-route -j ACCEPT\necho \"Opened worker route into {{ vars.LAB_MGMT_SUBNET\
+            \ }} (dind-side forwarding + DOCKER-USER accepts)\"\n"
       - id: wait_ready
         name: Wait for FRR to answer on all routers
         type: step
@@ -698,15 +702,16 @@ flows:
             \ true\n  sed \\\n    -e \"s#__HEGEMONY_CLAB_NAME__#${LAB_NAME}#g\" \\\n    -e \"s#__HEGEMONY_CLAB_WORKDIR__#${WORKDIR}#g\"\
             \ \\\n    \"${WORKDIR}/topology.clab.yml\" > \"${TOPOLOGY}\"\nfi\ncontainerlab destroy -t \"${TOPOLOGY}\" --cleanup\
             \ || true\n# Close the worker route opened at deploy time: without the\n# lab these DOCKER-USER accepts would\
-            \ let a future network\n# reusing {{ vars.LAB_MGMT_SUBNET }} inherit worker access.\n# The deploy step's -C guard\
-            \ keeps the rules single, so one\n# -D per direction restores the prior sandbox policy.\niptables -D DOCKER-USER\
-            \ -d {{ vars.LAB_MGMT_SUBNET }} -j ACCEPT 2>/dev/null || true\niptables -D DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET\
-            \ }} -j ACCEPT 2>/dev/null || true\n# Workers are not containers of the sandbox daemon (they reach\n# the lab\
-            \ over a routed hop, not docker network connect), so\n# there is nothing to detach before removing the network.\n\
-            docker network rm meridian-lab-mgmt 2>/dev/null || true\nrm -rf \"${WORKDIR}\" || true\nREMOVE_GITEA=$(printf\
-            \ '%s' \"{{ inputs.remove_gitea }}\" | tr 'A-Z' 'a-z')\ncase \"$REMOVE_GITEA\" in\n  true|1|yes)\n    docker rm\
-            \ -f meridian-gitea 2>/dev/null || true\n    echo \"Removed Gitea container.\"\n    ;;\nesac\necho \"Teardown\
-            \ complete.\"\n"
+            \ let a future network\n# reusing {{ vars.LAB_MGMT_SUBNET }} inherit worker access.\n# The comment match limits\
+            \ deletion to rules this flow owns\n# (deploy's -C guard keeps them single), so teardown cannot\n# remove another\
+            \ component's policy for the same subnet.\niptables -D DOCKER-USER -d {{ vars.LAB_MGMT_SUBNET }} -m comment --comment\
+            \ meridian-lab-route -j ACCEPT 2>/dev/null || true\niptables -D DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET }} -m comment\
+            \ --comment meridian-lab-route -j ACCEPT 2>/dev/null || true\n# Workers are not containers of the sandbox daemon\
+            \ (they reach\n# the lab over a routed hop, not docker network connect), so\n# there is nothing to detach before\
+            \ removing the network.\ndocker network rm meridian-lab-mgmt 2>/dev/null || true\nrm -rf \"${WORKDIR}\" || true\n\
+            REMOVE_GITEA=$(printf '%s' \"{{ inputs.remove_gitea }}\" | tr 'A-Z' 'a-z')\ncase \"$REMOVE_GITEA\" in\n  true|1|yes)\n\
+            \    docker rm -f meridian-gitea 2>/dev/null || true\n    echo \"Removed Gitea container.\"\n    ;;\nesac\necho\
+            \ \"Teardown complete.\"\n"
         policy:
           timeout_sec: 330
           retries: 0

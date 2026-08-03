@@ -6,14 +6,16 @@
 # It builds the lab images (FRR+sshd routers, Alpine+sshd endpoint hosts),
 # deploys an 11-router / 4-host multi-area OSPF lab (two datacenters + two
 # branches, see src/files/lab/topology.clab.yml) with fixed management
-# addresses, attaches the lab management network to the Hegemony workers (so
-# the seeded inventory becomes reachable), and optionally stands up a local
-# Gitea for config backups. It then PARKS on an approval gate
-# WITH NO EXPIRY: the run stays paused — the lab keeps running on the host —
-# while you SSH to the routers and exercise the other flows against them.
-# Approving the gate tears the lab down; rejecting leaves it running. This is
-# the only flow that touches the host Docker daemon, and a good example of a
-# run that stays open for hours or days.
+# addresses, opens the routed path from the Hegemony workers into the lab
+# management network (the lab lives inside the platform's dind sandbox
+# daemon; the workers reach it through a host route plus dind-side
+# forwarding, so the seeded inventory becomes reachable), and optionally
+# stands up a local Gitea for config backups. It then PARKS on an approval
+# gate WITH NO EXPIRY: the run stays paused — the lab keeps running in the
+# sandbox — while you SSH to the routers and exercise the other flows
+# against them. Approving the gate tears the lab down; rejecting leaves it
+# running. This is the flow that administers the sandbox daemon, and a good
+# example of a run that stays open for hours or days.
 
 schema_version: 2
 
@@ -21,8 +23,9 @@ flows:
   - name: "Lab: Provision and tear down demo datacenter"
     description: >-
       Build the lab images, deploy the multi-area OSPF lab (11 routers and 4
-      Linux endpoint hosts across dc1, dc2 and two branches), attach the lab
-      network to the workers, and optionally stand up Gitea; then hold at an
+      Linux endpoint hosts across dc1, dc2 and two branches), open the routed
+      path from the workers into the lab network (the lab runs inside the
+      platform's dind sandbox), and optionally stand up Gitea; then hold at an
       approval gate (no expiry) so you can interact with the lab. Approve to
       tear it down, reject to leave it running.
     definition:
@@ -158,10 +161,13 @@ flows:
                   # every lab deploy; dind-netns rules evaporate on a dind
                   # restart, so redeploying the lab restores them.
                   sysctl -w net.ipv4.ip_forward=1
-                  iptables -C DOCKER-USER -d {{ vars.LAB_MGMT_SUBNET }} -j ACCEPT 2>/dev/null \
-                    || iptables -I DOCKER-USER -d {{ vars.LAB_MGMT_SUBNET }} -j ACCEPT
-                  iptables -C DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET }} -j ACCEPT 2>/dev/null \
-                    || iptables -I DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET }} -j ACCEPT
+                  # The comment match marks the rules as this flow's own, so
+                  # teardown deletes exactly what deploy added and never a
+                  # rule some other component placed for the same subnet.
+                  iptables -C DOCKER-USER -d {{ vars.LAB_MGMT_SUBNET }} -m comment --comment meridian-lab-route -j ACCEPT 2>/dev/null \
+                    || iptables -I DOCKER-USER -d {{ vars.LAB_MGMT_SUBNET }} -m comment --comment meridian-lab-route -j ACCEPT
+                  iptables -C DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET }} -m comment --comment meridian-lab-route -j ACCEPT 2>/dev/null \
+                    || iptables -I DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET }} -m comment --comment meridian-lab-route -j ACCEPT
                   echo "Opened worker route into {{ vars.LAB_MGMT_SUBNET }} (dind-side forwarding + DOCKER-USER accepts)"
           - id: wait_ready
             name: Wait for FRR to answer on all routers
@@ -360,10 +366,11 @@ flows:
                   # Close the worker route opened at deploy time: without the
                   # lab these DOCKER-USER accepts would let a future network
                   # reusing {{ vars.LAB_MGMT_SUBNET }} inherit worker access.
-                  # The deploy step's -C guard keeps the rules single, so one
-                  # -D per direction restores the prior sandbox policy.
-                  iptables -D DOCKER-USER -d {{ vars.LAB_MGMT_SUBNET }} -j ACCEPT 2>/dev/null || true
-                  iptables -D DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET }} -j ACCEPT 2>/dev/null || true
+                  # The comment match limits deletion to rules this flow owns
+                  # (deploy's -C guard keeps them single), so teardown cannot
+                  # remove another component's policy for the same subnet.
+                  iptables -D DOCKER-USER -d {{ vars.LAB_MGMT_SUBNET }} -m comment --comment meridian-lab-route -j ACCEPT 2>/dev/null || true
+                  iptables -D DOCKER-USER -s {{ vars.LAB_MGMT_SUBNET }} -m comment --comment meridian-lab-route -j ACCEPT 2>/dev/null || true
                   # Workers are not containers of the sandbox daemon (they reach
                   # the lab over a routed hop, not docker network connect), so
                   # there is nothing to detach before removing the network.
