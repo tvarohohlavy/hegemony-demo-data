@@ -628,8 +628,8 @@ flows:
             # the links and clone URLs Gitea DISPLAYS, and operators\n# reach the UI at localhost via the platform's dind\
             \ port\n# re-publish. Flows and the platform API never read\n# ROOT_URL — they use the configured {{ vars.GITEA_URL\
             \ }}\n# (http://dind:3000) repository URLs directly.\ndocker run -d --name meridian-gitea \\\n  --restart unless-stopped\
-            \ \\\n  -p 3000:3000 \\\n  -e GITEA__security__INSTALL_LOCK=true \\\n  -e GITEA__server__ROOT_URL=\"http://localhost:{{\
-            \ vars.GITEA_PORT }}/\" \\\n  gitea/gitea:1.22-rootless\nsh /attachments/seed.sh\n"
+            \ \\\n  -p {{ vars.GITEA_PORT }}:3000 \\\n  -e GITEA__security__INSTALL_LOCK=true \\\n  -e GITEA__server__ROOT_URL=\"\
+            http://localhost:{{ vars.GITEA_PORT }}/\" \\\n  gitea/gitea:1.22-rootless\nsh /attachments/seed.sh\n"
       - id: join
         name: Datacenter ready
         type: join
@@ -666,9 +666,9 @@ flows:
           title: Demo datacenter is up — approve to tear it down
           message: 'The lab is running: 11 routers and 4 Linux endpoint hosts in 172.20.30.0/24 (dc1 .11-.15, br1 .21-.23,
             br2 .31-.33, dc2 .41-.44; user clab). Exercise the Ops/Net flows against them — including the end-to-end reachability
-            test from the endpoint hosts — and browse Gitea at http://localhost:3000 if deployed (the platform''s dind service
-            re-publishes the sandbox port to your machine). This gate never expires. APPROVE to tear the lab down and clean
-            the sandbox; REJECT to leave it running.'
+            test from the endpoint hosts — and browse Gitea at http://localhost:{{ vars.GITEA_PORT }} if deployed (the platform''s
+            dind service re-publishes the sandbox port to your machine). This gate never expires. APPROVE to tear the lab
+            down and clean the sandbox; REJECT to leave it running.'
       - id: teardown
         name: Destroy lab and Gitea
         type: step
@@ -3737,7 +3737,8 @@ variables:
     that netns) and from the platform API. The dind service re-publishes the port to the operator's browser as localhost:3000.
 - name: GITEA_PORT
   value: '3000'
-  description: Published port of the demo Gitea service.
+  description: Published port of the demo Gitea service (bound in the dind netns and advertised in ROOT_URL). Changing it
+    also requires re-pointing the platform dind service's browser re-publish, which targets sandbox port 3000 by default.
 - name: GITEA_ORG
   value: meridian
   description: Gitea organisation that owns the source-of-truth and backup repos.

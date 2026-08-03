@@ -266,7 +266,7 @@ flows:
                   # (http://dind:3000) repository URLs directly.
                   docker run -d --name meridian-gitea \
                     --restart unless-stopped \
-                    -p 3000:3000 \
+                    -p {{ vars.GITEA_PORT }}:3000 \
                     -e GITEA__security__INSTALL_LOCK=true \
                     -e GITEA__server__ROOT_URL="http://localhost:{{ vars.GITEA_PORT }}/" \
                     gitea/gitea:1.22-rootless
@@ -314,10 +314,11 @@ flows:
                 172.20.30.0/24 (dc1 .11-.15, br1 .21-.23, br2 .31-.33,
                 dc2 .41-.44; user clab). Exercise the Ops/Net flows against
                 them — including the end-to-end reachability test from the
-                endpoint hosts — and browse Gitea at http://localhost:3000 if
-                deployed (the platform's dind service re-publishes the sandbox
-                port to your machine). This gate never expires. APPROVE to tear
-                the lab down and clean the sandbox; REJECT to leave it running.
+                endpoint hosts — and browse Gitea at
+                http://localhost:{{ vars.GITEA_PORT }} if deployed (the
+                platform's dind service re-publishes the sandbox port to your
+                machine). This gate never expires. APPROVE to tear the lab
+                down and clean the sandbox; REJECT to leave it running.
           - id: teardown
             name: Destroy lab and Gitea
             type: step

@@ -33,7 +33,11 @@ variables:
       re-publishes the port to the operator's browser as localhost:3000.
   - name: GITEA_PORT
     value: "3000"
-    description: Published port of the demo Gitea service.
+    description: >-
+      Published port of the demo Gitea service (bound in the dind netns and
+      advertised in ROOT_URL). Changing it also requires re-pointing the
+      platform dind service's browser re-publish, which targets sandbox port
+      3000 by default.
   - name: GITEA_ORG
     value: meridian
     description: Gitea organisation that owns the source-of-truth and backup repos.
