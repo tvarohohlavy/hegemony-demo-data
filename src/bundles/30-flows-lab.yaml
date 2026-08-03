@@ -24,11 +24,12 @@ flows:
   - name: "Lab: Provision and tear down demo datacenter"
     description: >-
       Build the lab images, deploy the multi-area OSPF lab (11 routers and 4
-      Linux endpoint hosts across dc1, dc2 and two branches), open the routed
-      path from the workers into the lab network (the lab runs inside the
-      platform's dind sandbox), and optionally stand up Gitea; then hold at an
-      approval gate (no expiry) so you can interact with the lab. Approve to
-      tear it down, reject to leave it running.
+      Linux endpoint hosts across dc1, dc2 and two branches), deploy the lab
+      bastion the workers tunnel through — SSH ProxyJump and authenticated
+      SOCKS5 via meridian-bastion (the lab runs inside the platform's dind
+      sandbox) — and optionally stand up Gitea; then hold at an approval gate
+      (no expiry) so you can interact with the lab. Approve to tear it down,
+      reject to leave it running.
     definition:
       # Only one lab may exist at a time: this flow drives the host Docker
       # daemon and deploys a topology on fixed management addresses, so a
@@ -186,7 +187,21 @@ flows:
                       # neither published port is an open proxy.
                       exec microsocks -u "$JUMP_USER" -P "$JUMP_PASSWORD" -p 1080
                     '
-                  echo "Bastion up: SSH ProxyJump dind:2222, SOCKS5 dind:1080."
+                  # docker run -d only proves creation; the listeners come up
+                  # after an apk install inside the container. Gate on both
+                  # ports (published in the dind netns — network_mode: host
+                  # here IS that netns) so the approval gate can never be
+                  # reached while the only worker access path is down.
+                  for i in $(seq 1 60); do
+                    if nc -z 127.0.0.1 2222 2>/dev/null && nc -z 127.0.0.1 1080 2>/dev/null; then
+                      echo "Bastion ready: SSH ProxyJump dind:2222, SOCKS5 dind:1080."
+                      exit 0
+                    fi
+                    sleep 2
+                  done
+                  echo "TIMEOUT waiting for bastion listeners (2222/1080)" >&2
+                  docker logs meridian-bastion 2>&1 | tail -50 || true
+                  exit 1
           - id: wait_ready
             name: Wait for FRR to answer on all routers
             type: step
