@@ -199,12 +199,16 @@ flows:
                       exec microsocks -u "$JUMP_USER" -P "$JUMP_PASSWORD" -p 1080
                     '
                   # docker run -d only proves creation; the listeners come up
-                  # after an apk install inside the container. Gate on both
-                  # ports (published in the dind netns — network_mode: host
-                  # here IS that netns) so the approval gate can never be
-                  # reached while the only worker access path is down.
+                  # after the in-container build/apk step. Probe them from
+                  # INSIDE the bastion (alpine busybox `nc -z`, always present)
+                  # via docker exec, so readiness never depends on whether this
+                  # clab image ships nc. sshd binds :22 and microsocks :1080
+                  # internally (published as :2222/:1080 in the dind netns). The
+                  # gate blocks the approval step until the only worker access
+                  # path is actually up.
                   for i in $(seq 1 60); do
-                    if nc -z 127.0.0.1 2222 2>/dev/null && nc -z 127.0.0.1 1080 2>/dev/null; then
+                    if docker exec meridian-bastion sh -c \
+                        'nc -z 127.0.0.1 22 && nc -z 127.0.0.1 1080' 2>/dev/null; then
                       echo "Bastion ready: SSH ProxyJump dind:2222, SOCKS5 dind:1080."
                       exit 0
                     fi

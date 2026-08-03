@@ -586,12 +586,14 @@ flows:
             \    # default-on); password auth is what the inventory\n    # provider ships as the jump credential.\n    /usr/sbin/sshd\
             \ -o PasswordAuthentication=yes -o PermitRootLogin=no\n    # RFC 1929: the SOCKS listener always authenticates\
             \ —\n    # neither published port is an open proxy.\n    exec microsocks -u \"$JUMP_USER\" -P \"$JUMP_PASSWORD\"\
-            \ -p 1080\n  '\n# docker run -d only proves creation; the listeners come up\n# after an apk install inside the\
-            \ container. Gate on both\n# ports (published in the dind netns — network_mode: host\n# here IS that netns) so\
-            \ the approval gate can never be\n# reached while the only worker access path is down.\nfor i in $(seq 1 60);\
-            \ do\n  if nc -z 127.0.0.1 2222 2>/dev/null && nc -z 127.0.0.1 1080 2>/dev/null; then\n    echo \"Bastion ready:\
-            \ SSH ProxyJump dind:2222, SOCKS5 dind:1080.\"\n    exit 0\n  fi\n  sleep 2\ndone\necho \"TIMEOUT waiting for\
-            \ bastion listeners (2222/1080)\" >&2\ndocker logs meridian-bastion 2>&1 | tail -50 || true\nexit 1\n"
+            \ -p 1080\n  '\n# docker run -d only proves creation; the listeners come up\n# after the in-container build/apk\
+            \ step. Probe them from\n# INSIDE the bastion (alpine busybox `nc -z`, always present)\n# via docker exec, so\
+            \ readiness never depends on whether this\n# clab image ships nc. sshd binds :22 and microsocks :1080\n# internally\
+            \ (published as :2222/:1080 in the dind netns). The\n# gate blocks the approval step until the only worker access\n\
+            # path is actually up.\nfor i in $(seq 1 60); do\n  if docker exec meridian-bastion sh -c \\\n      'nc -z 127.0.0.1\
+            \ 22 && nc -z 127.0.0.1 1080' 2>/dev/null; then\n    echo \"Bastion ready: SSH ProxyJump dind:2222, SOCKS5 dind:1080.\"\
+            \n    exit 0\n  fi\n  sleep 2\ndone\necho \"TIMEOUT waiting for bastion listeners (2222/1080)\" >&2\ndocker logs\
+            \ meridian-bastion 2>&1 | tail -50 || true\nexit 1\n"
       - id: wait_ready
         name: Wait for FRR to answer on all routers
         type: step
@@ -3773,8 +3775,9 @@ variables:
   description: Base URL of the demo Gitea service (composed from GITEA_HOST/PORT).
 - name: LAB_MGMT_SUBNET
   value: 172.20.30.0/24
-  description: Management subnet containerlab assigns to the FRR lab routers (informational — must match topology.clab.yml;
-    workers reach it only through the lab bastion, never by routing).
+  description: 'Management subnet containerlab assigns to the FRR lab routers. Purely documentary: no flow references it (the
+    topology hardcodes the subnet in topology.clab.yml, and workers reach the lab only through the bastion, never by routing).
+    Kept as the canonical record of the lab subnet — must match topology.clab.yml.'
 notification_destinations:
 - name: Meridian NOC Email
   type: email
