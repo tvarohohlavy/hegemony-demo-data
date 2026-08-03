@@ -209,9 +209,9 @@ flows:
                       # ed25519 key (every transport here supports it) passed
                       # with -h makes startup deterministic; reuse an existing
                       # key so the bastion identity stays stable across restarts.
-                      [ -s /etc/ssh/ssh_host_ed25519_key ] || ssh-keygen -q -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ""
+                      [ -s /etc/ssh/ssh_host_ed25519_key ] || ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ""
                       # ProxyJump opens a direct-tcpip channel to the device, so
-                      # the bastion needs TCP forwarding. Alpine's openssh ships
+                      # the bastion needs TCP forwarding. Alpine openssh ships
                       # AllowTcpForwarding=no by default (aports
                       # disable-forwarding-by-default.patch) — NOT the upstream
                       # default-on — so re-enable it explicitly, or sshd refuses

@@ -593,8 +593,8 @@ flows:
             \    # builds have shipped where -A leaves no usable host key\n    # and sshd exits \"no hostkeys available --\
             \ exiting\". An\n    # ed25519 key (every transport here supports it) passed\n    # with -h makes startup deterministic;\
             \ reuse an existing\n    # key so the bastion identity stays stable across restarts.\n    [ -s /etc/ssh/ssh_host_ed25519_key\
-            \ ] || ssh-keygen -q -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N \"\"\n    # ProxyJump opens a direct-tcpip\
-            \ channel to the device, so\n    # the bastion needs TCP forwarding. Alpine's openssh ships\n    # AllowTcpForwarding=no\
+            \ ] || ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N \"\"\n    # ProxyJump opens a direct-tcpip channel\
+            \ to the device, so\n    # the bastion needs TCP forwarding. Alpine openssh ships\n    # AllowTcpForwarding=no\
             \ by default (aports\n    # disable-forwarding-by-default.patch) — NOT the upstream\n    # default-on — so re-enable\
             \ it explicitly, or sshd refuses\n    # the hop with \"administratively prohibited\". Password auth\n    # is\
             \ the jump credential the inventory provider ships.\n    echo \"bastion: setup ok; starting sshd (:22) + microsocks\
