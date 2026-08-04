@@ -19,11 +19,6 @@
 #    (plan-only vs apply), apply is approval-gated, a -detailed-exitcode
 #    verify proves convergence, and netcli pushes the declared config to the
 #    FRR routers with post-change evidence asserted.
-#  * "IaC: Ansible router drift remediation" is a WHILE loop that audits the
-#    routers' running config with netcli, and while non-compliant runs an
-#    Ansible raw/vtysh remediation playbook (the routers' SSH shell IS vtysh,
-#    so raw blocks need no python on the device). max_iterations routes to a
-#    manual-intervention terminal.
 #
 # NOTE: the Ansible server flow needs the lab-host image with python3 + sudo
 # (src/files/lab/host/Dockerfile) — re-run "Lab: Provision and tear down demo
@@ -93,12 +88,27 @@ flows:
             params:
               image: alpine:3.22
               working_dir: /workspace
-              # Host networking so the container reaches the lab management
-              # network (172.20.30.0/24) like the other lab-facing containers.
-              network_mode: host
               timeout_seconds: 300
               command:
                 - sh /attachments/rolling.sh
+              # Container-level egress policy (narrows the flow's open default,
+              # so no admin role is needed). This step installs ansible from the
+              # Alpine package mirror and SSHes into the lab servers to apply the
+              # baseline — nothing else. Allow-list exactly that: HTTP/HTTPS for
+              # `apk add`, and SSH to the lab management subnet. Everything else
+              # (including the cloud metadata endpoint, denied explicitly so the
+              # deny-beats-allow precedence is visible) is dropped on the sandbox
+              # daemon. Enforced on a policy bridge, so host networking is gone —
+              # the allow ACCEPT punches through to the lab subnet.
+              egress_mode: allow-listed
+              # Literal CIDRs, not {{ vars.LAB_MGMT_SUBNET }}: egress rules are
+              # grammar-checked at save time, before templates resolve.
+              egress_allow:
+                - 0.0.0.0/0:80/tcp
+                - 0.0.0.0/0:443/tcp
+                - 172.20.30.0/24:22/tcp
+              egress_deny:
+                - 169.254.169.254/32
               env:
                 TARGET_HOST: "{{ loop.item }}"
                 LAB_USER: "{{ secret('vault://orgs/default/secrets/meridian/lab/ssh/username') }}"
@@ -140,6 +150,11 @@ flows:
               image: alpine:3.22
               working_dir: /workspace
               timeout_seconds: 60
+              # This step only formats a text report into an artifact — it never
+              # touches the network. deny-all gets it --network none on the
+              # sandbox daemon: the tightest possible policy, and a container
+              # that cannot exfiltrate the rollout results it just read.
+              egress_mode: deny-all
               command:
                 - |
                   mkdir -p /artifacts/new
@@ -248,6 +263,16 @@ flows:
       convergence check before netcli pushes the declared config to the
       routers and asserts the post-change evidence.
     definition:
+      # Flow-level egress policy: every container.run step in this flow is
+      # Terraform running fully offline (builtin resources, no provider
+      # downloads, state in the shared workspace), so the whole flow's
+      # containers get deny-all — no network at all. The netcli config-push
+      # step is worker-side (not a container.run) and rides the bastion, so it
+      # is unaffected. One declaration covers the flow; a step could still
+      # narrow further, never widen (that would need the admin role).
+      network_policy:
+        egress:
+          mode: deny-all
       # Terraform serializes on its state: a second apply against the same
       # state either blocks on the lock or, worse, plans against a state the
       # first run is mid-way through rewriting. Admitting one run at a time
@@ -635,236 +660,6 @@ flows:
                   kind: inventory.devices
         edges: []
 
-  - name: "IaC: Ansible router drift remediation"
-    description: >-
-      Audit the selected FRR routers for the golden loopback description and,
-      while any router drifts, remediate with an Ansible raw/vtysh playbook —
-      re-auditing each pass until the fleet converges or the loop's iteration
-      cap routes to a manual-intervention terminal. Run variables count the
-      passes and record the verdict.
-    definition:
-      graph:
-        nodes:
-          - id: start
-            name: Start
-            type: start
-            position_x: 0
-            position_y: 280
-          - id: sv_init
-            name: Init audit state
-            type: set_vars
-            position_x: 200
-            position_y: 280
-            assignments:
-              - name: compliant
-                expr: "false"
-              - name: passes
-                expr: "0"
-          - id: fix_loop
-            name: Until compliant
-            type: loop
-            loop_mode: while
-            condition: "not (run.vars.compliant | default(false))"
-            max_iterations: 3
-            position_x: 620
-            position_y: 60
-            width: 1640
-            height: 460
-          - id: audit
-            name: Audit running config
-            type: step
-            kind: CHECK
-            phase: VERIFY
-            handler: netcli.collect_evidence
-            scope_id: fix_loop
-            position_x: 60
-            position_y: 100
-            target_selectors:
-              - type: role
-                role: drift_targets
-            params:
-              commands:
-                - show running-config
-            policy:
-              timeout_sec: 120
-              retries: 0
-              on_failure: CONTINUE
-              evidence_required: true
-          - id: check
-            name: Golden description present?
-            type: step
-            kind: CHECK
-            phase: VERIFY
-            handler: evidence.assert
-            scope_id: fix_loop
-            position_x: 440
-            position_y: 100
-            params:
-              artifact_step_id: audit
-              target_role: drift_targets
-              command: show running-config
-              # Deliberately whole-output: the golden marker lives on one
-              # Loopback0 description line, and a line filter cannot express
-              # "under interface Loopback0" — presence is the honest check.
-              operator: contains
-              expected: managed by Meridian NetOps
-              message: At least one router lacks the golden loopback description.
-            policy:
-              timeout_sec: 60
-              retries: 0
-              on_failure: CONTINUE
-              evidence_required: false
-          - id: sv_done
-            name: Mark compliant
-            type: set_vars
-            scope_id: fix_loop
-            position_x: 820
-            position_y: 60
-            assignments:
-              - name: compliant
-                expr: "true"
-              - name: passes
-                expr: "(run.vars.passes | default(0) | int) + 1"
-          - id: remediate
-            name: Ansible remediation
-            type: step
-            kind: EXECUTE
-            phase: IMPLEMENTATION
-            handler: container.run
-            scope_id: fix_loop
-            position_x: 820
-            position_y: 260
-            mounted_files:
-              - routers.ini
-              - remediate.yml
-              - remediate.sh
-            params:
-              image: alpine:3.22
-              working_dir: /workspace
-              # Host networking so the container reaches the lab management
-              # network (172.20.30.0/24) like the other lab-facing containers.
-              network_mode: host
-              timeout_seconds: 300
-              command:
-                - sh /attachments/remediate.sh
-              env:
-                LIMIT_HOSTS: "{{ targets.drift_targets | map(attribute='name') | join(',') }}"
-                LAB_USER: "{{ secret('vault://orgs/default/secrets/meridian/lab/ssh/username') }}"
-                LAB_PASSWORD: "{{ secret('vault://orgs/default/secrets/meridian/lab/ssh/password') }}"
-            policy:
-              timeout_sec: 330
-              retries: 0
-              on_failure: CONTINUE
-              evidence_required: false
-          - id: sv_retry
-            name: Mark drifting
-            type: set_vars
-            scope_id: fix_loop
-            position_x: 1200
-            position_y: 260
-            assignments:
-              - name: compliant
-                expr: "false"
-              - name: passes
-                expr: "(run.vars.passes | default(0) | int) + 1"
-          - id: fix_end
-            name: Loop End
-            type: loop_end
-            loop_ref: fix_loop
-            scope_id: fix_loop
-            position_x: 1562
-            position_y: 426
-          - id: converged
-            name: Fleet compliant
-            type: terminal
-            terminal_status: success
-            position_x: 2380
-            position_y: 240
-          - id: manual
-            name: Manual intervention required
-            type: terminal
-            terminal_status: failure
-            position_x: 2380
-            position_y: 440
-        edges:
-          - id: e_start_init
-            source: start:start
-            target: sv_init
-          - id: e_init_loop
-            source: sv_init:success
-            target: fix_loop
-          - id: e_loop_audit
-            source: fix_loop:iterate
-            target: audit
-          - id: e_audit_check
-            source: audit:success
-            target: check
-          # Collection failure (e.g. unreachable router) counts as a drifting
-          # pass and retries on the next iteration.
-          - id: e_audit_retry
-            source: audit:failure
-            target: sv_retry
-          - id: e_check_done
-            source: check:success
-            target: sv_done
-          - id: e_check_remediate
-            source: check:failure
-            target: remediate
-          - id: e_remediate_retry
-            source: remediate:success
-            target: sv_retry
-          - id: e_remediate_failed
-            source: remediate:failure
-            target: sv_retry
-          - id: e_done_end
-            source: sv_done:success
-            target: fix_end
-          - id: e_retry_end
-            source: sv_retry:success
-            target: fix_end
-          - id: e_loop_converged
-            source: fix_loop:done
-            target: converged
-          - id: e_loop_manual
-            source: fix_loop:max_iterations
-            target: manual
-      interface_graph:
-        nodes:
-          - id: sec_targets
-            kind: section
-            position_x: 80
-            position_y: 80
-            width: 520
-            height: 200
-            data:
-              label: Routers
-              runtime_layout: card
-              collapsible: false
-          - id: f_targets
-            kind: field
-            parent_id: sec_targets
-            position_x: 40
-            position_y: 60
-            data:
-              label: Routers to audit
-              field_id: drift_targets
-              field_type: inventory.device
-              required: true
-              description: >-
-                FRR routers audited for the golden loopback description.
-                Preselects the cores the Terraform demo does NOT manage —
-                both demos stamp the same "interface lo" description, so
-                overlapping targets would overwrite each other's assertions.
-                Remediation is limited to this selection.
-              default_value:
-                - dc1-core-02
-                - dc2-core-02
-              config:
-                role: drift_targets
-                multiple: true
-                option_source:
-                  kind: inventory.devices
-        edges: []
 
 flow_attachments:
   - flow: "IaC: Ansible server baseline rollout"
@@ -888,12 +683,3 @@ flow_attachments:
   - flow: "IaC: Terraform router service"
     filename: verify.sh
     content_file: src/files/terraform/verify.sh
-  - flow: "IaC: Ansible router drift remediation"
-    filename: routers.ini
-    content_file: src/files/ansible/routers.ini
-  - flow: "IaC: Ansible router drift remediation"
-    filename: remediate.yml
-    content_file: src/files/ansible/remediate.yml
-  - flow: "IaC: Ansible router drift remediation"
-    filename: remediate.sh
-    content_file: src/files/ansible/remediate.sh
