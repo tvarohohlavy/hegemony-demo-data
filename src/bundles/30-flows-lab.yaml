@@ -192,7 +192,17 @@ flows:
                       if [ ! -x /usr/local/bin/microsocks ]; then
                         apk add --no-cache --virtual .ms-build build-base git >/dev/null
                         rm -rf /tmp/microsocks
-                        git clone --depth 1 https://github.com/rofl0r/microsocks /tmp/microsocks >/dev/null 2>&1
+                        # Pinned to the v1.0.5 commit, not the default branch:
+                        # this builds and runs as root in a container that also
+                        # holds the bastion password, so the source must be a
+                        # revision someone reviewed rather than whatever HEAD
+                        # happens to be at demo time.
+                        mkdir -p /tmp/microsocks
+                        git -C /tmp/microsocks init -q
+                        git -C /tmp/microsocks fetch -q --depth 1 \
+                          https://github.com/rofl0r/microsocks \
+                          98421a21c4adc4c77c0cf3a5d650cc28ad3e0107 >/dev/null 2>&1
+                        git -C /tmp/microsocks checkout -q FETCH_HEAD
                         make -C /tmp/microsocks >/dev/null
                         install -m 0755 /tmp/microsocks/microsocks /usr/local/bin/microsocks
                         apk del .ms-build >/dev/null
@@ -433,8 +443,7 @@ flows:
                 The lab is running: 11 routers and 4 Linux endpoint hosts in
                 172.20.30.0/24 (dc1 .11-.15, br1 .21-.23, br2 .31-.33,
                 dc2 .41-.44; user clab). Exercise the Ops/Net flows against
-                them — including the end-to-end reachability test from the
-                endpoint hosts — and browse Gitea at
+                them, and browse Gitea at
                 http://localhost:{{ vars.GITEA_PORT }} if deployed (the
                 platform's dind service re-publishes the sandbox port to your
                 machine). This gate never expires. APPROVE to tear the lab

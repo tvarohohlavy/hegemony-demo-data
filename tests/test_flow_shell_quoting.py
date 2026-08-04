@@ -17,7 +17,12 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-BUNDLES = Path(__file__).resolve().parents[1] / "src" / "bundles"
+SRC = Path(__file__).resolve().parents[1] / "src"
+# Every bundle root, not just src/bundles: the per-organization roots
+# (bundles-acme, bundles-globex, …) carry container.run steps of their own, and
+# an apostrophe inside one of their sh -c blocks truncates the script exactly
+# the same way.
+BUNDLE_ROOTS = sorted(path for path in SRC.glob("bundles*") if path.is_dir())
 
 
 def offending_lines(text: str) -> list[tuple[int, str]]:
@@ -45,7 +50,7 @@ def offending_lines(text: str) -> list[tuple[int, str]]:
 
 class FlowShellQuotingTests(unittest.TestCase):
     def test_no_apostrophe_inside_single_quoted_sh_c_blocks(self) -> None:
-        for path in sorted(BUNDLES.glob("*.yaml")):
+        for path in sorted(p for root in BUNDLE_ROOTS for p in root.glob("*.yaml")):
             with self.subTest(bundle=path.name):
                 offenders = offending_lines(path.read_text(encoding="utf-8"))
                 self.assertEqual(

@@ -584,14 +584,18 @@ flows:
             \ single-binary SOCKS5 server from source. build-base\n    # + git are dropped again once the binary is in place.\n\
             \    [ -x /usr/sbin/sshd ] || apk add --no-cache openssh >/dev/null\n    if [ ! -x /usr/local/bin/microsocks ];\
             \ then\n      apk add --no-cache --virtual .ms-build build-base git >/dev/null\n      rm -rf /tmp/microsocks\n\
-            \      git clone --depth 1 https://github.com/rofl0r/microsocks /tmp/microsocks >/dev/null 2>&1\n      make -C\
-            \ /tmp/microsocks >/dev/null\n      install -m 0755 /tmp/microsocks/microsocks /usr/local/bin/microsocks\n   \
-            \   apk del .ms-build >/dev/null\n      rm -rf /tmp/microsocks\n    fi\n    # Create the user once; always (re)set\
-            \ the password so a\n    # credential rotation still takes effect on a restart.\n    id \"$JUMP_USER\" >/dev/null\
-            \ 2>&1 || adduser -D \"$JUMP_USER\"\n    printf \"%s:%s\\n\" \"$JUMP_USER\" \"$JUMP_PASSWORD\" | chpasswd\n  \
-            \  # Generate the host key explicitly instead of trusting\n    # `ssh-keygen -A`: freshly-pulled alpine:3.20 openssh\n\
-            \    # builds have shipped where -A leaves no usable host key\n    # and sshd exits \"no hostkeys available --\
-            \ exiting\". An\n    # ed25519 key (every transport here supports it) passed\n    # with -h makes startup deterministic;\
+            \      # Pinned to the v1.0.5 commit, not the default branch:\n      # this builds and runs as root in a container\
+            \ that also\n      # holds the bastion password, so the source must be a\n      # revision someone reviewed rather\
+            \ than whatever HEAD\n      # happens to be at demo time.\n      mkdir -p /tmp/microsocks\n      git -C /tmp/microsocks\
+            \ init -q\n      git -C /tmp/microsocks fetch -q --depth 1 \\\n        https://github.com/rofl0r/microsocks \\\
+            \n        98421a21c4adc4c77c0cf3a5d650cc28ad3e0107 >/dev/null 2>&1\n      git -C /tmp/microsocks checkout -q FETCH_HEAD\n\
+            \      make -C /tmp/microsocks >/dev/null\n      install -m 0755 /tmp/microsocks/microsocks /usr/local/bin/microsocks\n\
+            \      apk del .ms-build >/dev/null\n      rm -rf /tmp/microsocks\n    fi\n    # Create the user once; always\
+            \ (re)set the password so a\n    # credential rotation still takes effect on a restart.\n    id \"$JUMP_USER\"\
+            \ >/dev/null 2>&1 || adduser -D \"$JUMP_USER\"\n    printf \"%s:%s\\n\" \"$JUMP_USER\" \"$JUMP_PASSWORD\" | chpasswd\n\
+            \    # Generate the host key explicitly instead of trusting\n    # `ssh-keygen -A`: freshly-pulled alpine:3.20\
+            \ openssh\n    # builds have shipped where -A leaves no usable host key\n    # and sshd exits \"no hostkeys available\
+            \ -- exiting\". An\n    # ed25519 key (every transport here supports it) passed\n    # with -h makes startup deterministic;\
             \ reuse an existing\n    # key so the bastion identity stays stable across restarts.\n    [ -s /etc/ssh/ssh_host_ed25519_key\
             \ ] || ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N \"\"\n    # ProxyJump opens a direct-tcpip channel\
             \ to the device, so\n    # the bastion needs TCP forwarding. Alpine openssh ships\n    # AllowTcpForwarding=no\
@@ -733,10 +737,9 @@ flows:
         params:
           title: Demo datacenter is up — approve to tear it down
           message: 'The lab is running: 11 routers and 4 Linux endpoint hosts in 172.20.30.0/24 (dc1 .11-.15, br1 .21-.23,
-            br2 .31-.33, dc2 .41-.44; user clab). Exercise the Ops/Net flows against them — including the end-to-end reachability
-            test from the endpoint hosts — and browse Gitea at http://localhost:{{ vars.GITEA_PORT }} if deployed (the platform''s
-            dind service re-publishes the sandbox port to your machine). This gate never expires. APPROVE to tear the lab
-            down and clean the sandbox; REJECT to leave it running.'
+            br2 .31-.33, dc2 .41-.44; user clab). Exercise the Ops/Net flows against them, and browse Gitea at http://localhost:{{
+            vars.GITEA_PORT }} if deployed (the platform''s dind service re-publishes the sandbox port to your machine). This
+            gate never expires. APPROVE to tear the lab down and clean the sandbox; REJECT to leave it running.'
       - id: teardown
         name: Destroy lab and Gitea
         type: step
