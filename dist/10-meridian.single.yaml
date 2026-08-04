@@ -672,6 +672,32 @@ flows:
             \ }}\n# (http://dind:3000) repository URLs directly.\ndocker run -d --name meridian-gitea \\\n  --restart unless-stopped\
             \ \\\n  -p {{ vars.GITEA_PORT }}:3000 \\\n  -e GITEA__security__INSTALL_LOCK=true \\\n  -e GITEA__server__ROOT_URL=\"\
             http://localhost:{{ vars.GITEA_PORT }}/\" \\\n  gitea/gitea:1.22-rootless\nsh /attachments/seed.sh\n"
+      - id: monitor_lab
+        name: Watch core-router reachability
+        type: step
+        kind: CHECK
+        phase: IMPLEMENTATION
+        handler: monitor.connectivity
+        position_x: 1400
+        position_y: 480
+        params:
+          check_type: tcp_connect
+          port: 22
+          timeout_sec: 4
+          interval_ms: 5000
+          schedule_mode: until_join
+          socks_proxy: socks5://{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/username') }}:{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/password')
+            }}@dind:1080
+          targets:
+          - type: ip
+            addresses:
+            - 172.20.30.11
+            - 172.20.30.12
+            - 172.20.30.41
+            - 172.20.30.42
+        policy:
+          on_failure: CONTINUE
+          evidence_required: false
       - id: join
         name: Datacenter ready
         type: join
@@ -809,6 +835,13 @@ flows:
       - id: e_gitea_join_fail
         source: deploy_gitea:failure
         target: join
+      - id: e_fork_monitor
+        source: fork:fork
+        target: monitor_lab
+      - id: e_monitor_join_term
+        source: monitor_lab
+        target: join
+        type: termination
       - id: e_join_converge
         source: join:joined
         target: converge_check
@@ -3112,15 +3145,21 @@ flow_attachments:
     #\n# The playbook's exit code is captured explicitly (not piped through tee) —\n# it must reach the step verbatim: a failing\
     \ host is what trips the flow's\n# canary break edge and halts the rollout.\nset -eu\n\n: \"${TARGET_HOST:?TARGET_HOST\
     \ is required (the host to baseline)}\"\n: \"${LAB_USER:?LAB_USER is required}\"\n: \"${LAB_PASSWORD:?LAB_PASSWORD is\
-    \ required}\"\n\napk add --no-cache ansible-core sshpass openssh-client >/dev/null\nmkdir -p /artifacts/new\n\nEXTRA_VARS=$(mktemp)\n\
-    trap 'rm -f \"${EXTRA_VARS}\"' EXIT\n# JSON is valid YAML and json.dump escapes anything a credential can\n# contain —\
-    \ quotes or newlines in the secret cannot corrupt the vars file.\npython3 - \"${EXTRA_VARS}\" <<'PY'\nimport json\nimport\
-    \ os\nimport sys\n\nwith open(sys.argv[1], \"w\") as handle:\n    json.dump(\n        {\n            \"ansible_user\"\
-    : os.environ[\"LAB_USER\"],\n            \"ansible_password\": os.environ[\"LAB_PASSWORD\"],\n            \"ansible_become_password\"\
-    : os.environ[\"LAB_PASSWORD\"],\n        },\n        handle,\n    )\nPY\n\necho \"Applying server baseline to ${TARGET_HOST}\
-    \ ...\"\nLOG=\"/artifacts/new/baseline-${TARGET_HOST}.txt\"\nrc=0\nansible-playbook \\\n  -i /attachments/hosts.ini \\\
-    \n  --limit \"${TARGET_HOST}\" \\\n  -e \"@${EXTRA_VARS}\" \\\n  /attachments/baseline.yml >\"${LOG}\" 2>&1 || rc=$?\n\
-    cat \"${LOG}\"\nexit \"${rc}\"\n"
+    \ required}\"\n\n# Egress guardrail self-test. This step runs under an allow-listed egress\n# policy that denies the cloud\
+    \ metadata endpoint (169.254.169.254). Prove the\n# guard is live by trying to reach it: the connect is dropped on the\
+    \ sandbox\n# firewall, so the step's post-run egress report shows a non-zero drop count.\n# Non-fatal and short (2s) so\
+    \ it never delays the rollout; a *reachable*\n# endpoint would mean the policy is NOT being enforced, which is worth a\
+    \ shout.\nif wget -q -T 2 -O /dev/null http://169.254.169.254/latest/meta-data/ 2>/dev/null; then\n  echo \"WARNING: cloud\
+    \ metadata endpoint was reachable — egress policy not enforced?\"\nelse\n  echo \"Egress guardrail OK: metadata endpoint\
+    \ blocked (see the step's egress report for the drop).\"\nfi\n\napk add --no-cache ansible-core sshpass openssh-client\
+    \ >/dev/null\nmkdir -p /artifacts/new\n\nEXTRA_VARS=$(mktemp)\ntrap 'rm -f \"${EXTRA_VARS}\"' EXIT\n# JSON is valid YAML\
+    \ and json.dump escapes anything a credential can\n# contain — quotes or newlines in the secret cannot corrupt the vars\
+    \ file.\npython3 - \"${EXTRA_VARS}\" <<'PY'\nimport json\nimport os\nimport sys\n\nwith open(sys.argv[1], \"w\") as handle:\n\
+    \    json.dump(\n        {\n            \"ansible_user\": os.environ[\"LAB_USER\"],\n            \"ansible_password\"\
+    : os.environ[\"LAB_PASSWORD\"],\n            \"ansible_become_password\": os.environ[\"LAB_PASSWORD\"],\n        },\n\
+    \        handle,\n    )\nPY\n\necho \"Applying server baseline to ${TARGET_HOST} ...\"\nLOG=\"/artifacts/new/baseline-${TARGET_HOST}.txt\"\
+    \nrc=0\nansible-playbook \\\n  -i /attachments/hosts.ini \\\n  --limit \"${TARGET_HOST}\" \\\n  -e \"@${EXTRA_VARS}\"\
+    \ \\\n  /attachments/baseline.yml >\"${LOG}\" 2>&1 || rc=$?\ncat \"${LOG}\"\nexit \"${rc}\"\n"
 - flow: 'IaC: Terraform router service'
   filename: service.tf
   content: "# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier: AGPL-3.0-or-later\n\

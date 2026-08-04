@@ -350,6 +350,44 @@ flows:
                     -e GITEA__server__ROOT_URL="http://localhost:{{ vars.GITEA_PORT }}/" \
                     gitea/gitea:1.22-rootless
                   sh /attachments/seed.sh
+          - id: monitor_lab
+            name: Watch core-router reachability
+            type: step
+            kind: CHECK
+            phase: IMPLEMENTATION
+            handler: monitor.connectivity
+            position_x: 1400
+            position_y: 480
+            params:
+              # Watch the four OSPF core routers come up while the lab deploys.
+              # tcp_connect on :22 through the bastion's authenticated SOCKS5
+              # listener (dind:1080) — the only worker path into the lab
+              # management subnet. schedule_mode until_join keeps the monitor
+              # running until the deploy join fires (the termination edge
+              # below), so the reachability count climbs from 0 to 4 as the
+              # sandbox, bastion, and routers come up, then it stops right
+              # before the approval gate.
+              check_type: tcp_connect
+              port: 22
+              timeout_sec: 4
+              interval_ms: 5000
+              schedule_mode: until_join
+              socks_proxy: "socks5://{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/username') }}:{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/password') }}@dind:1080"
+              targets:
+                - type: ip
+                  addresses:
+                    - 172.20.30.11
+                    - 172.20.30.12
+                    - 172.20.30.41
+                    - 172.20.30.42
+            policy:
+              # Observability only: a monitor hiccup must never fail the lab
+              # bring-up. This node reaches the join through a termination edge,
+              # not an execution one, so it is not one of the join's awaited
+              # branches — the join fires on the deploy branches regardless, and
+              # CONTINUE keeps a failed probe from propagating as a run failure.
+              on_failure: CONTINUE
+              evidence_required: false
           - id: join
             name: Datacenter ready
             type: join
@@ -515,6 +553,17 @@ flows:
           - id: e_gitea_join_fail
             source: deploy_gitea:failure
             target: join
+          # Start the reachability monitor in parallel with the deploy branches.
+          - id: e_fork_monitor
+            source: fork:fork
+            target: monitor_lab
+          # Termination edge (not execution): when the deploy join fires, stop
+          # the monitor. It is deliberately NOT an execution input to the join,
+          # so the join's awaited-branch count stays the two deploy branches.
+          - id: e_monitor_join_term
+            source: monitor_lab
+            target: join
+            type: termination
           - id: e_join_converge
             source: join:joined
             target: converge_check

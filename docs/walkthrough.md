@@ -96,7 +96,14 @@ against). They become *reachable* only once the lab is stood up.
    declares a **run limit** of one, so the second attempt is refused — a
    parked run still holds its slot, because the lab is still standing.
 2. While it runs, watch the **Run detail** graph: parallel branches, live step
-   events, and the container steps executing.
+   events, and the container steps executing. One of the parallel branches is a
+   **background connectivity monitor** watching the four OSPF core routers
+   (172.20.30.11/12/41/42) over the bastion's SOCKS proxy. Open the **Monitor**
+   panel: reachability climbs from **0 → 4** as the sandbox, bastion, and
+   routers come up, then the monitor **stops the moment the deploy join fires**
+   — right before the approval gate. It is observability only (a hiccup never
+   fails the bring-up), and it showcases multi-target monitoring with a live
+   until-join schedule.
 3. When the lab is up, run **"Net: Lab routing health check"** — the run form
    opens with **all eleven lab routers already selected** as targets. It probes
    reachability and asserts OSPF neighbors are Full. Then try the two
