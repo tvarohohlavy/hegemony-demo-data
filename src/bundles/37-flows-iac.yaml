@@ -263,16 +263,22 @@ flows:
       convergence check before netcli pushes the declared config to the
       routers and asserts the post-change evidence.
     definition:
-      # Flow-level egress policy: every container.run step in this flow is
-      # Terraform running fully offline (builtin resources, no provider
-      # downloads, state in the shared workspace), so the whole flow's
-      # containers get deny-all — no network at all. The netcli config-push
-      # step is worker-side (not a container.run) and rides the bastion, so it
-      # is unaffected. One declaration covers the flow; a step could still
-      # narrow further, never widen (that would need the admin role).
+      # Flow-level egress policy, governing BOTH kinds of steps: worker-side
+      # netcli (config push + evidence) may reach only the bastion hop
+      # (dind:2222) and the lab routers' SSH — every other worker dial is
+      # refused before connecting. The container.run steps are Terraform
+      # running fully offline (builtin resources, no provider downloads,
+      # state in the shared workspace), so each narrows this policy to
+      # deny-all — no network at all. Narrowing is always allowed; widening
+      # a step beyond the flow policy would need the admin role.
       network_policy:
         egress:
-          mode: deny-all
+          mode: allow-listed
+          allow:
+            - dind:2222
+            # Literal CIDR, not {{ vars.LAB_MGMT_SUBNET }}: egress rules are
+            # parsed at admission, before template resolution.
+            - 172.20.30.0/24:22/tcp
       # Terraform serializes on its state: a second apply against the same
       # state either blocks on the lock or, worse, plans against a state the
       # first run is mid-way through rewriting. Admitting one run at a time
@@ -311,6 +317,9 @@ flows:
                 TF_VAR_service_name: "{{ inputs.service_name }}"
                 TF_VAR_service_prefix: "{{ inputs.service_prefix }}"
                 TF_VAR_routers: "{{ targets.tf_targets | map(attribute='name') | list | tojson }}"
+              # Terraform is fully offline here: narrow the flow's allow list
+              # (bastion + router SSH, for the netcli steps) to no network.
+              egress_mode: deny-all
             policy:
               timeout_sec: 300
               retries: 0
@@ -372,6 +381,7 @@ flows:
               timeout_seconds: 240
               command:
                 - sh /attachments/apply.sh
+              egress_mode: deny-all
             policy:
               timeout_sec: 300
               retries: 0
@@ -399,6 +409,7 @@ flows:
                 TF_VAR_service_name: "{{ inputs.service_name }}"
                 TF_VAR_service_prefix: "{{ inputs.service_prefix }}"
                 TF_VAR_routers: "{{ targets.tf_targets | map(attribute='name') | list | tojson }}"
+              egress_mode: deny-all
             policy:
               timeout_sec: 300
               retries: 0

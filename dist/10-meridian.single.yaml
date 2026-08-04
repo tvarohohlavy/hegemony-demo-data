@@ -2310,7 +2310,10 @@ flows:
   definition:
     network_policy:
       egress:
-        mode: deny-all
+        mode: allow-listed
+        allow:
+        - dind:2222
+        - 172.20.30.0/24:22/tcp
     run_limits:
       max_concurrent_runs: 1
     graph:
@@ -2343,6 +2346,7 @@ flows:
             TF_VAR_service_name: '{{ inputs.service_name }}'
             TF_VAR_service_prefix: '{{ inputs.service_prefix }}'
             TF_VAR_routers: '{{ targets.tf_targets | map(attribute=''name'') | list | tojson }}'
+          egress_mode: deny-all
         policy:
           timeout_sec: 300
           retries: 0
@@ -2402,6 +2406,7 @@ flows:
           timeout_seconds: 240
           command:
           - sh /attachments/apply.sh
+          egress_mode: deny-all
         policy:
           timeout_sec: 300
           retries: 0
@@ -2429,6 +2434,7 @@ flows:
             TF_VAR_service_name: '{{ inputs.service_name }}'
             TF_VAR_service_prefix: '{{ inputs.service_prefix }}'
             TF_VAR_routers: '{{ targets.tf_targets | map(attribute=''name'') | list | tojson }}'
+          egress_mode: deny-all
         policy:
           timeout_sec: 300
           retries: 0
