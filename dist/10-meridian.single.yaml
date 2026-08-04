@@ -680,6 +680,13 @@ flows:
         handler: monitor.connectivity
         position_x: 1400
         position_y: 480
+        target_selectors:
+        - type: ip
+          addresses:
+          - 172.20.30.11
+          - 172.20.30.12
+          - 172.20.30.41
+          - 172.20.30.42
         params:
           check_type: tcp_connect
           port: 22
@@ -688,13 +695,6 @@ flows:
           schedule_mode: until_join
           socks_proxy: socks5://{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/username') }}:{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/password')
             }}@dind:1080
-          targets:
-          - type: ip
-            addresses:
-            - 172.20.30.11
-            - 172.20.30.12
-            - 172.20.30.41
-            - 172.20.30.42
         policy:
           on_failure: CONTINUE
           evidence_required: false

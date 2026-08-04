@@ -358,8 +358,18 @@ flows:
             handler: monitor.connectivity
             position_x: 1400
             position_y: 480
+            # The four OSPF core routers, as direct IP targets. This is the
+            # node's "Additional IP Targets" field in the editor (target_selectors
+            # of type ip), NOT a handler param — the monitor reads it first.
+            target_selectors:
+              - type: ip
+                addresses:
+                  - 172.20.30.11
+                  - 172.20.30.12
+                  - 172.20.30.41
+                  - 172.20.30.42
             params:
-              # Watch the four OSPF core routers come up while the lab deploys.
+              # Watch the four core routers come up while the lab deploys.
               # tcp_connect on :22 through the bastion's authenticated SOCKS5
               # listener (dind:1080) — the only worker path into the lab
               # management subnet. schedule_mode until_join keeps the monitor
@@ -373,13 +383,6 @@ flows:
               interval_ms: 5000
               schedule_mode: until_join
               socks_proxy: "socks5://{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/username') }}:{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/password') }}@dind:1080"
-              targets:
-                - type: ip
-                  addresses:
-                    - 172.20.30.11
-                    - 172.20.30.12
-                    - 172.20.30.41
-                    - 172.20.30.42
             policy:
               # Observability only: a monitor hiccup must never fail the lab
               # bring-up. This node reaches the join through a termination edge,
