@@ -36,10 +36,11 @@ uv run python scripts/build.py
 uv run python scripts/build.py --check
 ```
 
-Also confirm `install.sh`'s `HEGEMONY_PLATFORM_REF` default points at the
-platform release this demo bundle targets — that value is baked into the
-released installer. (`INSTALLER_VERSION` is stamped automatically; leave it as
-`main` in the repo.)
+`install.sh` resolves the platform's newest release at run time, so there is no
+`HEGEMONY_PLATFORM_REF` default to bump here — the released installer follows the
+latest platform release automatically (pass `--platform-ref` for a pinned
+install). (`INSTALLER_VERSION` is stamped automatically; leave it as `main` in
+the repo.)
 
 Commit source changes and generated `dist/` changes together.
 

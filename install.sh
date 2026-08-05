@@ -5,9 +5,10 @@
 #
 # One-command installer for the Hegemony demo.
 #
-# Versioned release (recommended — pin the exact tag; immutable + reproducible):
+# Versioned release (recommended — pins the demo bundles to this tag; the
+# platform defaults to its latest release, add --platform-ref vX.Y.Z to pin it):
 #   curl -fsSL https://github.com/tvarohohlavy/hegemony-demo-data/releases/download/vX.Y.Z/install.sh | sh
-# Floating latest release (follows the newest release; convenient, not pinned):
+# Floating latest release (newest demo release + newest platform release):
 #   curl -fsSL https://github.com/tvarohohlavy/hegemony-demo-data/releases/latest/download/install.sh | sh
 # Bleeding edge (tracks main):
 #   curl -fsSL https://raw.githubusercontent.com/tvarohohlavy/hegemony-demo-data/main/install.sh | sh
@@ -26,7 +27,7 @@
 #
 # Options (also as: curl ... | sh -s -- --dir ./demo --platform-ref main):
 #   --dir <dir>            workspace dir            (env: HEGEMONY_DEMO_DIR;  default ./hegemony-demo)
-#   --platform-ref <ref>   platform repo tag/branch (env: HEGEMONY_PLATFORM_REF; default v2.0.0)
+#   --platform-ref <ref>   platform repo tag/branch (env: HEGEMONY_PLATFORM_REF; default: latest release)
 #   --demo-ref <ref>       demo-data repo tag/branch (env: HEGEMONY_DEMO_REF;  default this installer's version)
 #   --no-up                clone only, do not start the stack
 #   --version              print the installer version and exit
@@ -42,9 +43,16 @@ INSTALLER_VERSION=main
 
 PLATFORM_REPO=${HEGEMONY_PLATFORM_REPO:-https://github.com/tvarohohlavy/InfraHorizon.git}
 DEMO_DATA_REPO=${HEGEMONY_DEMO_DATA_REPO:-https://github.com/tvarohohlavy/hegemony-demo-data.git}
-PLATFORM_REF=${HEGEMONY_PLATFORM_REF:-v2.0.0}
+# Empty by default: resolved to the platform's newest release tag at run time
+# (resolve_refs), via git ls-remote with the same credentials the clone already
+# needs — so it works for private repos without a token, and a fresh install
+# always lands on the current platform release. Set HEGEMONY_PLATFORM_REF (or
+# pass --platform-ref) to pin a specific tag/branch for a reproducible install.
+PLATFORM_REF=${HEGEMONY_PLATFORM_REF:-}
 # Defaults to this installer's own version, so the release asset for vX.Y.Z
 # installs demo-data@vX.Y.Z (reproducible) and the raw main copy installs main.
+# The recommended releases/latest installer is stamped with the newest tag, so
+# it tracks the latest demo-data release automatically; override with --demo-ref.
 DEMO_REF=${HEGEMONY_DEMO_REF:-$INSTALLER_VERSION}
 # The bootstrap mount in the demo overlay is ../../../hegemony-demo-data/dist,
 # so the demo-data checkout MUST be a sibling named exactly this.
@@ -71,7 +79,7 @@ plugin, go-task, and `docker login ghcr.io`.
 
 Usage: install.sh [options]
   --dir <dir>           workspace dir            (env HEGEMONY_DEMO_DIR;      default ./hegemony-demo)
-  --platform-ref <ref>  platform repo tag/branch (env HEGEMONY_PLATFORM_REF;  default v2.0.0)
+  --platform-ref <ref>  platform repo tag/branch (env HEGEMONY_PLATFORM_REF;  default: latest release)
   --demo-ref <ref>      demo-data repo tag/branch (env HEGEMONY_DEMO_REF;     default this installer's version)
   --no-up               clone only, do not start the stack
   --version             print the installer version and exit
@@ -129,6 +137,29 @@ clone_or_update() { # $1=url $2=ref $3=dest
   fi
 }
 
+# Highest release tag (vN…) of a remote repo, by version sort. Uses the same
+# git credentials the clone needs, so it resolves private repos without a
+# token. Returns non-zero if the remote can't be queried; prints nothing when
+# the remote has no matching tags.
+latest_release_tag() { # $1=repo-url
+  _refs=$(git ls-remote --tags --refs "$1" 'v*' 2>/dev/null) || return 1
+  printf '%s\n' "$_refs" | awk -F/ '{ print $NF }' | sort -V | tail -n 1
+}
+
+# Resolve PLATFORM_REF to the platform's newest release when the caller left it
+# unset (see the PLATFORM_REF default). Done once, after arg parsing, so an
+# explicit --platform-ref or HEGEMONY_PLATFORM_REF short-circuits the lookup.
+# DEMO_REF needs no lookup: it already defaults to this installer's version.
+resolve_refs() {
+  if [ -z "$PLATFORM_REF" ]; then
+    PLATFORM_REF=$(latest_release_tag "$PLATFORM_REPO") \
+      || err "could not query $PLATFORM_REPO for its latest release — check your access"
+    [ -n "$PLATFORM_REF" ] \
+      || err "no release tags found at $PLATFORM_REPO — pass --platform-ref to pin one"
+    log "latest platform release: $PLATFORM_REF"
+  fi
+}
+
 require_task() {
   command -v task >/dev/null 2>&1 \
     || err "go-task is required to bring the demo up — install it (https://taskfile.dev) and re-run.
@@ -165,6 +196,7 @@ main() {
 
   log "installer version: $INSTALLER_VERSION"
   preflight_git
+  resolve_refs
 
   WORKSPACE=${HEGEMONY_DEMO_DIR:-./hegemony-demo}
   mkdir -p "$WORKSPACE"
