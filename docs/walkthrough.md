@@ -96,7 +96,14 @@ against). They become *reachable* only once the lab is stood up.
    declares a **run limit** of one, so the second attempt is refused — a
    parked run still holds its slot, because the lab is still standing.
 2. While it runs, watch the **Run detail** graph: parallel branches, live step
-   events, and the container steps executing.
+   events, and the container steps executing. One of the parallel branches is a
+   **background connectivity monitor** watching the four OSPF core routers
+   (172.20.30.11/12/41/42) over the bastion's SOCKS proxy. Open the **Monitor**
+   panel: reachability climbs from **0 → 4** as the sandbox, bastion, and
+   routers come up, then the monitor **stops the moment the deploy join fires**
+   — right before the approval gate. It is observability only (a hiccup never
+   fails the bring-up), and it showcases multi-target monitoring with a live
+   until-join schedule.
 3. When the lab is up, run **"Net: Lab routing health check"** — the run form
    opens with **all eleven lab routers already selected** as targets. It probes
    reachability and asserts OSPF neighbors are Full. Then try the two
@@ -118,7 +125,13 @@ against). They become *reachable* only once the lab is stood up.
      loop's collected results (`steps.rollout.output.results`). *(Requires the
      lab images rebuilt after this demo-data update — the host image gained
      python3 + sudo for Ansible; re-run the Lab provision flow if your lab
-     predates it.)*
+     predates it.)* **Egress policy, container level:** open the *Apply server
+     baseline* step's **Advanced** panel — it carries an **allow-listed** egress
+     policy (HTTP/HTTPS for `apk`, SSH to the lab management subnet, with the
+     cloud-metadata address explicitly denied). The *Rollout report* step is
+     **deny-all** — it only formats text, so it runs with no network at all.
+     After each policied step the run's event stream shows an **egress report**
+     ("N packet(s) dropped, M accepted") read straight off the sandbox firewall.
    * **"IaC: Terraform router service"** — the classic **plan → gate → apply**:
      Terraform (fully offline, state in the run's shared workspace) plans the
      desired service loopback; a **value-mode branch** switches on the launch
@@ -126,13 +139,14 @@ against). They become *reachable* only once the lab is stood up.
      re-run as *Plan and apply* — it pauses at the approval gate, then applies,
      proves convergence with `-detailed-exitcode`, pushes the declared config
      to the routers via netcli, and asserts the post-change evidence.
-   * **"IaC: Ansible router drift remediation"** — a **while-loop** audits the
-     core routers for the golden loopback description and, while any router
-     drifts, remediates over SSH with an Ansible **raw/vtysh** playbook (the
-     routers' login shell *is* vtysh — no python on the devices). First run:
-     audit fails → remediation pass → re-audit passes → `done`. Run it again:
-     compliant on the first check, zero remediation passes. The iteration cap
-     routes to a "Manual intervention required" terminal.
+     **Egress policy, flow level:** the whole flow declares **deny-all** in its
+     network policy — every Terraform container runs with no network, since it
+     works entirely offline. The netcli push is worker-side (it rides the lab
+     bastion, not a container), so the flow policy leaves it untouched. The
+     lab-provisioning and Git-backup flows deliberately keep **no** egress
+     policy: their containers hold the Docker socket or use host networking to
+     manage the sandbox, which egress policies cannot (and are not meant to)
+     constrain.
 5. Run **"Ops: Announce service prefix"** — the **core routers are preselected**,
    and the loopback / service-address / change-reference fields are **prefilled
    with defaults** (leave them as-is to accept the defaults, or override). It
@@ -145,8 +159,7 @@ against). They become *reachable* only once the lab is stood up.
 6. Run **"Ops: Backup lab configs to Git"** (**all routers preselected**) to push
    device configs to the demo Gitea; the backup manifest records the org
    standards — note it prints `ntp=192.0.2.123`, resolved from the **shared** org
-   (see Act 4 for the contrast). And **"Net: End-to-end reachability test"** opens
-   with the four **endpoint hosts preselected** as probe sources.
+   (see Act 4 for the contrast).
 7. **Native Git backups.** That flow pushes from *inside its container*; two more
    Gitea repositories are wired for Hegemony to write to *itself* — and they work
    **out of the box** once the Lab flow has stood Gitea up. There is no token to
@@ -185,22 +198,12 @@ Still as **`meridian-noc`**, switch the org picker to **Shared Standards
 2. **Secrets** — a read-only `shared-monitoring-token` under
    `orgs/shared/secrets/…`.
 3. **File Repositories** — the shared **Golden Artifacts** object store.
-4. **Flows** — three golden flows Meridian publishes for every tenant, each
-   **runnable with no form input**:
-   - **"Shared: Compliance baseline report"** — a shell step that renders the
-     effective standards,
-   - **"Shared: Ansible config audit"** — an **Ansible** playbook (localhost)
-     that asserts the standards are set and writes a PASS/FAIL report,
-   - **"Shared: Terraform network baseline plan"** — a provider-less
-     **Terraform** init + plan that renders the baseline as a plan output.
-
-   Each container step carries **no inline script**: it mounts a file
-   attachment (the playbook, the `.tf`, the report script) and passes every
-   value as an environment variable — open a step to see the mounted files.
+4. **Notifications** — a shared **Platform NOC Email** destination every
+   tenant sees and can subscribe its own flows to.
 
 > **Feature:** the shared org is a normal, editable org *for its own members*
-> while everyone else only reads it — and golden **Ansible** and **Terraform**
-> activities driven by mounted file attachments, runnable with zero inputs.
+> while everyone else only reads it — golden variables, secrets, files, and
+> notification destinations consumed across every tenant.
 
 ---
 
@@ -219,12 +222,10 @@ Log out. Log in as **`acme-admin`**.
    - `NTP` resolves to **`10.20.0.123`** — Acme's store-local override,
    - `DNS` / `syslog` fall through to the **shared** golden values.
    **Per-org variable precedence** and **preselected targets**, live.
-4. Now run a **shared** flow from Acme — try **"Shared: Ansible config audit"**
-   or **"Shared: Terraform network baseline plan"** (both carry a **Shared**
-   badge, and both run with **no inputs**). They run **as Acme**, so the Ansible
-   report and the Terraform plan output both show Acme's NTP override while
-   reading the shared DNS/syslog. **A shared Ansible/Terraform activity executing
-   as the consumer org.**
+4. That same run just proved the **shared standards resolve inside a tenant
+   flow**: the report reads the golden DNS/syslog straight from the shared
+   org while honoring Acme's NTP override — no copy of the values lives in
+   Acme.
 5. Open a flow's config field and use the **variable picker** (the `{{ }}`
    button): the shared golden variables appear, marked as belonging to the
    shared organization.

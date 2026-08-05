@@ -22,6 +22,12 @@ secrets:
   values:
     username: clab
     password: demo-lab-password
+- name: meridian-lab-bastion
+  description: Login for the lab bastion (SSH ProxyJump + SOCKS5).
+  folder: orgs/default/secrets/meridian/lab/bastion
+  values:
+    username: jump
+    password: demo-bastion-password
 - name: meridian-prod-ssh
   description: SSH + enable credentials for the production device estate.
   folder: orgs/default/secrets/meridian/prod/ssh
@@ -461,8 +467,9 @@ devices:
 flows:
 - name: 'Lab: Provision and tear down demo datacenter'
   description: Build the lab images, deploy the multi-area OSPF lab (11 routers and 4 Linux endpoint hosts across dc1, dc2
-    and two branches), attach the lab network to the workers, and optionally stand up Gitea; then hold at an approval gate
-    (no expiry) so you can interact with the lab. Approve to tear it down, reject to leave it running.
+    and two branches), deploy the lab bastion the workers tunnel through — SSH ProxyJump and authenticated SOCKS5 via meridian-bastion
+    (the lab runs inside the platform's dind sandbox) — and optionally stand up Gitea; then hold at an approval gate (no expiry)
+    so you can interact with the lab. Approve to tear it down, reject to leave it running.
   definition:
     run_limits:
       max_concurrent_runs: 1
@@ -543,8 +550,8 @@ flows:
           retries: 0
           on_failure: FAIL_RUN
           evidence_required: true
-      - id: connect_workers
-        name: Attach lab network to workers
+      - id: deploy_bastion
+        name: Deploy lab bastion (SSH + SOCKS5)
         type: step
         kind: ACTION
         phase: IMPLEMENTATION
@@ -556,14 +563,56 @@ flows:
           working_dir: /workspace
           attach_docker_socket: true
           network_mode: host
-          timeout_seconds: 120
+          timeout_seconds: 180
+          env:
+            JUMP_USER: '{{ secret(''vault://orgs/default/secrets/meridian/lab/bastion/username'') }}'
+            JUMP_PASSWORD: '{{ secret(''vault://orgs/default/secrets/meridian/lab/bastion/password'') }}'
           command:
-          - "set -e\n# Give the Hegemony workers an interface on the lab management\n# network so netcli can SSH to the routers.\
-            \ The compose service\n# label targets exactly the Hegemony workers (a name substring\n# would also catch unrelated\
-            \ containers such as NetBox workers);\n# -q filters avoid docker --format templates colliding with\n# Jinja braces.\n\
-            COUNT=0\nfor c in $(docker ps -q --filter label=com.docker.compose.service=worker); do\n  docker network connect\
-            \ meridian-lab-mgmt \"$c\" 2>/dev/null || true\n  COUNT=$((COUNT + 1))\ndone\necho \"Attached ${COUNT} worker\
-            \ container(s) to meridian-lab-mgmt ({{ vars.LAB_MGMT_SUBNET }})\"\n"
+          - "set -e\ndocker rm -f meridian-bastion 2>/dev/null || true\n# The bastion is the workers' ONLY path into the lab\n\
+            # (design: dind-sandbox §11): device SSH sessions ProxyJump\n# through :2222 and TCP probes ride the authenticated\
+            \ SOCKS5\n# listener on :1080. Both publishes bind in the dind netns —\n# workers reach them as dind:2222 / dind:1080\
+            \ over the\n# compose network, and nothing is published to the host. No\n# host route, no ip_forward, no DOCKER-USER\
+            \ edits anywhere.\n# --restart brings it back after a dind restart (same\n# lifecycle as Gitea); redeploying the\
+            \ lab recreates it.\ndocker run -d --name meridian-bastion \\\n  --restart unless-stopped \\\n  --network meridian-lab-mgmt\
+            \ \\\n  -p 2222:22 -p 1080:1080 \\\n  -e JUMP_USER=\"$JUMP_USER\" \\\n  -e JUMP_PASSWORD=\"$JUMP_PASSWORD\" \\\
+            \n  alpine:3.20 \\\n  sh -c '\n    set -e\n    # --restart unless-stopped re-runs this whole script on\n    #\
+            \ every restart (so the bastion survives a dind bounce,\n    # same lifecycle as Gitea). The container filesystem\n\
+            \    # persists across restarts, so this MUST be idempotent:\n    # a second `adduser` or a `git clone` into an\
+            \ existing\n    # dir fails under `set -e` and wedges the bastion in a\n    # crash loop with the listeners down.\
+            \ Guard every one-time\n    # setup step and only (re)start the daemons at the end.\n    #\n    # microsocks is\
+            \ not in the alpine:3.20 stable repos\n    # (main/community) — only in edge/testing — so build the\n    # tiny\
+            \ single-binary SOCKS5 server from source. build-base\n    # + git are dropped again once the binary is in place.\n\
+            \    [ -x /usr/sbin/sshd ] || apk add --no-cache openssh >/dev/null\n    if [ ! -x /usr/local/bin/microsocks ];\
+            \ then\n      apk add --no-cache --virtual .ms-build build-base git >/dev/null\n      rm -rf /tmp/microsocks\n\
+            \      # Pinned to the v1.0.5 commit, not the default branch:\n      # this builds and runs as root in a container\
+            \ that also\n      # holds the bastion password, so the source must be a\n      # revision someone reviewed rather\
+            \ than whatever HEAD\n      # happens to be at demo time.\n      mkdir -p /tmp/microsocks\n      git -C /tmp/microsocks\
+            \ init -q\n      git -C /tmp/microsocks fetch -q --depth 1 \\\n        https://github.com/rofl0r/microsocks \\\
+            \n        98421a21c4adc4c77c0cf3a5d650cc28ad3e0107 >/dev/null 2>&1\n      git -C /tmp/microsocks checkout -q FETCH_HEAD\n\
+            \      make -C /tmp/microsocks >/dev/null\n      install -m 0755 /tmp/microsocks/microsocks /usr/local/bin/microsocks\n\
+            \      apk del .ms-build >/dev/null\n      rm -rf /tmp/microsocks\n    fi\n    # Create the user once; always\
+            \ (re)set the password so a\n    # credential rotation still takes effect on a restart.\n    id \"$JUMP_USER\"\
+            \ >/dev/null 2>&1 || adduser -D \"$JUMP_USER\"\n    printf \"%s:%s\\n\" \"$JUMP_USER\" \"$JUMP_PASSWORD\" | chpasswd\n\
+            \    # Generate the host key explicitly instead of trusting\n    # `ssh-keygen -A`: freshly-pulled alpine:3.20\
+            \ openssh\n    # builds have shipped where -A leaves no usable host key\n    # and sshd exits \"no hostkeys available\
+            \ -- exiting\". An\n    # ed25519 key (every transport here supports it) passed\n    # with -h makes startup deterministic;\
+            \ reuse an existing\n    # key so the bastion identity stays stable across restarts.\n    [ -s /etc/ssh/ssh_host_ed25519_key\
+            \ ] || ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N \"\"\n    # ProxyJump opens a direct-tcpip channel\
+            \ to the device, so\n    # the bastion needs TCP forwarding. Alpine openssh ships\n    # AllowTcpForwarding=no\
+            \ by default (aports\n    # disable-forwarding-by-default.patch) — NOT the upstream\n    # default-on — so re-enable\
+            \ it explicitly, or sshd refuses\n    # the hop with \"administratively prohibited\". Password auth\n    # is\
+            \ the jump credential the inventory provider ships.\n    echo \"bastion: setup ok; starting sshd (:22) + microsocks\
+            \ (:1080)\"\n    /usr/sbin/sshd -h /etc/ssh/ssh_host_ed25519_key -o PasswordAuthentication=yes -o PermitRootLogin=no\
+            \ -o AllowTcpForwarding=yes\n    # RFC 1929: the SOCKS listener always authenticates —\n    # neither published\
+            \ port is an open proxy.\n    exec microsocks -u \"$JUMP_USER\" -P \"$JUMP_PASSWORD\" -p 1080\n  '\n# docker run\
+            \ -d only proves creation; the listeners come up\n# after the in-container build/apk step. Probe them from\n#\
+            \ INSIDE the bastion (alpine busybox `nc -z`, always present)\n# via docker exec, so readiness never depends on\
+            \ whether this\n# clab image ships nc. sshd binds :22 and microsocks :1080\n# internally (published as :2222/:1080\
+            \ in the dind netns). The\n# gate blocks the approval step until the only worker access\n# path is actually up.\n\
+            for i in $(seq 1 60); do\n  if docker exec meridian-bastion sh -c \\\n      'nc -z 127.0.0.1 22 && nc -z 127.0.0.1\
+            \ 1080' 2>/dev/null; then\n    echo \"Bastion ready: SSH ProxyJump dind:2222, SOCKS5 dind:1080.\"\n    exit 0\n\
+            \  fi\n  sleep 2\ndone\necho \"TIMEOUT waiting for bastion listeners (2222/1080)\" >&2\ndocker logs meridian-bastion\
+            \ 2>&1 | tail -50 || true\nexit 1\n"
       - id: wait_ready
         name: Wait for FRR to answer on all routers
         type: step
@@ -620,8 +669,39 @@ flows:
           command:
           - "DEPLOY=$(printf '%s' \"{{ inputs.deploy_gitea }}\" | tr 'A-Z' 'a-z')\ncase \"$DEPLOY\" in\n  true|1|yes) ;;\n\
             \  *)\n    echo \"Gitea deployment skipped (deploy_gitea unchecked).\"\n    exit 0\n    ;;\nesac\nset -e\ndocker\
-            \ rm -f meridian-gitea 2>/dev/null || true\ndocker run -d --name meridian-gitea \\\n  -p 3000:3000 \\\n  -e GITEA__security__INSTALL_LOCK=true\
-            \ \\\n  -e GITEA__server__ROOT_URL=\"http://localhost:3000/\" \\\n  gitea/gitea:1.22-rootless\nsh /attachments/seed.sh\n"
+            \ rm -f meridian-gitea 2>/dev/null || true\n# --restart brings Gitea back after a dind daemon restart\n# (data\
+            \ is still demo-ephemeral; a redeploy recreates it).\n# ROOT_URL stays on the browser-facing address: it controls\n\
+            # the links and clone URLs Gitea DISPLAYS, and operators\n# reach the UI at localhost via the platform's dind\
+            \ port\n# re-publish. Flows and the platform API never read\n# ROOT_URL — they use the configured {{ vars.GITEA_URL\
+            \ }}\n# (http://dind:3000) repository URLs directly.\ndocker run -d --name meridian-gitea \\\n  --restart unless-stopped\
+            \ \\\n  -p {{ vars.GITEA_PORT }}:3000 \\\n  -e GITEA__security__INSTALL_LOCK=true \\\n  -e GITEA__server__ROOT_URL=\"\
+            http://localhost:{{ vars.GITEA_PORT }}/\" \\\n  gitea/gitea:1.22-rootless\nsh /attachments/seed.sh\n"
+      - id: monitor_lab
+        name: Watch core-router reachability
+        type: step
+        kind: CHECK
+        phase: IMPLEMENTATION
+        handler: monitor.connectivity
+        position_x: 1400
+        position_y: 480
+        target_selectors:
+        - type: ip
+          addresses:
+          - 172.20.30.11
+          - 172.20.30.12
+          - 172.20.30.41
+          - 172.20.30.42
+        params:
+          check_type: tcp_connect
+          port: 22
+          timeout_sec: 4
+          interval_ms: 5000
+          schedule_mode: until_join
+          socks_proxy: socks5://{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/username') }}:{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/password')
+            }}@dind:1080
+        policy:
+          on_failure: CONTINUE
+          evidence_required: false
       - id: join
         name: Datacenter ready
         type: join
@@ -657,9 +737,9 @@ flows:
         params:
           title: Demo datacenter is up — approve to tear it down
           message: 'The lab is running: 11 routers and 4 Linux endpoint hosts in 172.20.30.0/24 (dc1 .11-.15, br1 .21-.23,
-            br2 .31-.33, dc2 .41-.44; user clab). Exercise the Ops/Net flows against them — including the end-to-end reachability
-            test from the endpoint hosts — and browse Gitea at http://localhost:3000 if deployed. This gate never expires.
-            APPROVE to tear the lab down and clean the host; REJECT to leave it running.'
+            br2 .31-.33, dc2 .41-.44; user clab). Exercise the Ops/Net flows against them, and browse Gitea at http://localhost:{{
+            vars.GITEA_PORT }} if deployed (the platform''s dind service re-publishes the sandbox port to your machine). This
+            gate never expires. APPROVE to tear the lab down and clean the sandbox; REJECT to leave it running.'
       - id: teardown
         name: Destroy lab and Gitea
         type: step
@@ -688,10 +768,10 @@ flows:
             \ -p \"${WORKDIR}\"\nif [ ! -f \"${TOPOLOGY}\" ]; then\n  cp -ar /attachments/* \"${WORKDIR}/\" 2>/dev/null ||\
             \ true\n  sed \\\n    -e \"s#__HEGEMONY_CLAB_NAME__#${LAB_NAME}#g\" \\\n    -e \"s#__HEGEMONY_CLAB_WORKDIR__#${WORKDIR}#g\"\
             \ \\\n    \"${WORKDIR}/topology.clab.yml\" > \"${TOPOLOGY}\"\nfi\ncontainerlab destroy -t \"${TOPOLOGY}\" --cleanup\
-            \ || true\n# The workers attached during bootstrap still hold endpoints on\n# the management network; detach them\
-            \ or the network removal is\n# refused and the network (and worker interfaces) linger.\nfor c in $(docker ps -aq\
-            \ --filter network=meridian-lab-mgmt); do\n  docker network disconnect -f meridian-lab-mgmt \"$c\" 2>/dev/null\
-            \ || true\ndone\ndocker network rm meridian-lab-mgmt 2>/dev/null || true\nrm -rf \"${WORKDIR}\" || true\nREMOVE_GITEA=$(printf\
+            \ || true\n# The bastion is the only non-clab endpoint on the mgmt\n# network: remove it first so the network\
+            \ rm cannot fail on\n# an attached container. Workers never attach to sandbox\n# networks — they reach the lab\
+            \ through the bastion — so\n# nothing else needs detaching.\ndocker rm -f meridian-bastion 2>/dev/null || true\n\
+            docker network rm meridian-lab-mgmt 2>/dev/null || true\nrm -rf \"${WORKDIR}\" || true\nREMOVE_GITEA=$(printf\
             \ '%s' \"{{ inputs.remove_gitea }}\" | tr 'A-Z' 'a-z')\ncase \"$REMOVE_GITEA\" in\n  true|1|yes)\n    docker rm\
             \ -f meridian-gitea 2>/dev/null || true\n    echo \"Removed Gitea container.\"\n    ;;\nesac\necho \"Teardown\
             \ complete.\"\n"
@@ -734,17 +814,17 @@ flows:
       - id: e_fork_gitea
         source: fork:fork
         target: deploy_gitea
-      - id: e_lab_connect
+      - id: e_lab_bastion
         source: deploy_lab:success
-        target: connect_workers
+        target: deploy_bastion
       - id: e_lab_join_fail
         source: deploy_lab:failure
         target: join
-      - id: e_connect_wait
-        source: connect_workers:success
+      - id: e_bastion_wait
+        source: deploy_bastion:success
         target: wait_ready
-      - id: e_connect_join_fail
-        source: connect_workers:failure
+      - id: e_bastion_join_fail
+        source: deploy_bastion:failure
         target: join
       - id: e_wait_join
         source: wait_ready:success
@@ -758,6 +838,13 @@ flows:
       - id: e_gitea_join_fail
         source: deploy_gitea:failure
         target: join
+      - id: e_fork_monitor
+        source: fork:fork
+        target: monitor_lab
+      - id: e_monitor_join_term
+        source: monitor_lab
+        target: join
+        type: termination
       - id: e_join_converge
         source: join:joined
         target: converge_check
@@ -886,8 +973,8 @@ flows:
             \ f'\nDRY=$(printf '%s' \"{{ inputs.dry_run }}\" | tr 'A-Z' 'a-z')\nWORK=$(mktemp -d)\ncd \"$WORK\"\ncase \"$DRY\"\
             \ in\n  true|1|yes)\n    DRY=true\n    git init -q -b main .\n    ;;\n  *)\n    DRY=false\n    # Clone so each\
             \ backup appends to the repository history.\n    git -c credential.helper=\"$CRED_HELPER\" clone -q \\\n     \
-            \ \"http://localhost:3000/{{ vars.GITEA_ORG }}/config-backups.git\" .\n    ;;\nesac\ngit config user.email \"\
-            {{ vars.NOC_CONTACT }}\"\ngit config user.name \"{{ vars.ORG_NAME }} Automation\"\nrm -rf configs\nmkdir -p configs\n\
+            \ \"{{ vars.GITEA_URL }}/{{ vars.GITEA_ORG }}/config-backups.git\" .\n    ;;\nesac\ngit config user.email \"{{\
+            \ vars.NOC_CONTACT }}\"\ngit config user.name \"{{ vars.ORG_NAME }} Automation\"\nrm -rf configs\nmkdir -p configs\n\
             cp -ar /artifacts/collect_configs/* configs/ 2>/dev/null || true\nCOUNT=$(find configs -type f | wc -l)\nif [\
             \ \"$COUNT\" -eq 0 ]; then\n  echo \"ERROR: no device configurations were collected\" >&2\n  exit 1\nfi\n{\n \
             \ printf 'Change: %s\\nDevices: %s\\nGenerated: %s\\n' \\\n    \"{{ inputs.change_id }}\" \"$COUNT\" \"$(date\
@@ -1426,6 +1513,8 @@ flows:
           port: 22
           timeout_sec: 10
           attempts: 2
+          socks_proxy: socks5://{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/username') }}:{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/password')
+            }}@dind:1080
         policy:
           timeout_sec: 60
           retries: 0
@@ -1570,213 +1659,6 @@ flows:
         relations:
         - semantic_type: options_filter
           value: provider_id
-- name: 'Net: End-to-end reachability test'
-  description: Log into the selected Linux endpoint hosts over SSH and ping the chosen lab destinations across the routed
-    fabric — a true end-to-end test from host LAN to host LAN through multi-area OSPF. Demonstrates the remote shell (exec-channel)
-    paradigm on plain Linux devices.
-  definition:
-    graph:
-      nodes:
-      - id: start
-        name: Start
-        type: start
-        position_x: 0
-        position_y: 140
-      - id: reachable
-        name: Reachability probe (TCP/22)
-        type: step
-        kind: CHECK
-        phase: PREPARE
-        handler: probe.connectivity
-        position_x: 240
-        position_y: 140
-        target_selectors:
-        - type: role
-          role: probe_sources
-        params:
-          check_type: tcp_connect
-          port: 22
-          timeout_sec: 10
-          attempts: 2
-        policy:
-          timeout_sec: 60
-          retries: 0
-          on_failure: FAIL_RUN
-          evidence_required: false
-      - id: host_facts
-        name: Collect host facts
-        type: step
-        kind: ACTION
-        phase: PREPARE
-        handler: shell.execute
-        position_x: 660
-        position_y: 140
-        target_selectors:
-        - type: role
-          role: probe_sources
-        params:
-          shell: default
-          fail_fast: true
-          command_timeout_sec: 30
-          commands:
-          - uname -a
-          - ip -brief address
-          - ip route show
-        policy:
-          timeout_sec: 90
-          retries: 0
-          on_failure: FAIL_RUN
-          evidence_required: false
-      - id: ping_targets
-        name: Ping selected destinations
-        type: step
-        kind: ACTION
-        phase: VERIFY
-        handler: shell.execute
-        position_x: 1080
-        position_y: 140
-        target_selectors:
-        - type: role
-          role: probe_sources
-        params:
-          shell: sh
-          fail_fast: true
-          command_timeout_sec: 120
-          commands:
-          - 'FAIL=0; for t in {{ inputs.ping_targets | join(" ") | regex_replace("[^0-9A-Za-z.:_ -]", "") }}; do case "$t"
-            in -*) echo "skipping invalid target: $t"; FAIL=1; continue;; esac; echo "--- ping $t ---"; ping -c 3 -W 2 "$t"
-            || FAIL=1; done; exit $FAIL'
-        policy:
-          timeout_sec: 180
-          retries: 0
-          on_failure: FAIL_RUN
-          evidence_required: false
-      - id: done
-        name: All destinations reachable
-        type: terminal
-        terminal_status: success
-        position_x: 1500
-        position_y: 60
-      - id: failed
-        name: Reachability failed
-        type: terminal
-        terminal_status: failure
-        position_x: 1500
-        position_y: 280
-      edges:
-      - id: e_start_reachable
-        source: start:start
-        target: reachable
-      - id: e_reachable_facts
-        source: reachable:success
-        target: host_facts
-      - id: e_reachable_failed
-        source: reachable:failure
-        target: failed
-      - id: e_facts_ping
-        source: host_facts:success
-        target: ping_targets
-      - id: e_facts_failed
-        source: host_facts:failure
-        target: failed
-      - id: e_ping_done
-        source: ping_targets:success
-        target: done
-      - id: e_ping_failed
-        source: ping_targets:failure
-        target: failed
-    interface_graph:
-      nodes:
-      - id: sec_sources
-        kind: section
-        position_x: 80
-        position_y: 80
-        width: 480
-        height: 200
-        data:
-          label: Probe sources
-          description: Linux endpoint hosts to run the test from.
-          runtime_layout: card
-          collapsible: false
-      - id: f_sources
-        kind: field
-        parent_id: sec_sources
-        position_x: 40
-        position_y: 60
-        data:
-          label: Endpoint hosts
-          field_id: sources
-          field_type: inventory.device
-          required: true
-          description: Lab endpoint hosts (role server) to probe from — preselected.
-          default_value:
-          - dc1-srv-01
-          - dc2-srv-01
-          - br1-srv-01
-          - br2-srv-01
-          config:
-            role: probe_sources
-            multiple: true
-            option_source:
-              kind: inventory.devices
-      - id: sec_destinations
-        kind: section
-        position_x: 620
-        position_y: 80
-        width: 520
-        height: 300
-        data:
-          label: Destinations
-          runtime_layout: card
-          collapsible: false
-      - id: f_dest_area
-        kind: field
-        parent_id: sec_destinations
-        position_x: 40
-        position_y: 60
-        data:
-          label: Destination area
-          field_id: dest_area
-          field_type: core.enum
-          required: false
-          description: 'Optional: narrow the destination list to one lab area. Options are the distinct `area` values from
-            the attached CSV.'
-          config:
-            option_source:
-              kind: attachment.csv
-              config:
-                filename: data/ping-destinations.csv
-                value_column: area
-      - id: f_ping_targets
-        kind: field
-        parent_id: sec_destinations
-        position_x: 40
-        position_y: 140
-        data:
-          label: Ping destinations
-          field_id: ping_targets
-          field_type: core.multi_enum
-          required: true
-          default_value:
-          - 10.101.1.10
-          - 10.104.1.10
-          description: Lab addresses each source host must reach (from the attached CSV).
-          config:
-            multiple: true
-            option_source:
-              kind: attachment.csv
-              config:
-                filename: data/ping-destinations.csv
-                value_column: address
-                label_column: name
-                description_column: area
-      edges:
-      - id: e_area_targets
-        source: f_dest_area
-        target: f_ping_targets
-        relations:
-        - semantic_type: options_filter
-          value: area
 - name: 'Net: Wait for OSPF convergence'
   description: 'Retry-until-healthy: collect OSPF neighbor state from the selected routers in a loop until every adjacency
     is Full (or give up after 10 attempts, 5s apart). Run-scoped variables track the attempt count and verdict; a branch after
@@ -2280,10 +2162,16 @@ flows:
         params:
           image: alpine:3.22
           working_dir: /workspace
-          network_mode: host
           timeout_seconds: 300
           command:
           - sh /attachments/rolling.sh
+          egress_mode: allow-listed
+          egress_allow:
+          - 0.0.0.0/0:80/tcp
+          - 0.0.0.0/0:443/tcp
+          - 172.20.30.0/24:22/tcp
+          egress_deny:
+          - 169.254.169.254/32
           env:
             TARGET_HOST: '{{ loop.item }}'
             LAB_USER: '{{ secret(''vault://orgs/default/secrets/meridian/lab/ssh/username'') }}'
@@ -2325,6 +2213,7 @@ flows:
           image: alpine:3.22
           working_dir: /workspace
           timeout_seconds: 60
+          egress_mode: deny-all
           command:
           - "mkdir -p /artifacts/new\n{\n  echo \"Ansible server baseline rollout\"\n  echo \"Hosts baselined (${COUNT}):\
             \ ${BASELINED}\"\n} | tee /artifacts/new/rollout-report.txt\n"
@@ -2422,6 +2311,12 @@ flows:
     by a -detailed-exitcode convergence check before netcli pushes the declared config to the routers and asserts the post-change
     evidence.'
   definition:
+    network_policy:
+      egress:
+        mode: allow-listed
+        allow:
+        - dind:2222
+        - 172.20.30.0/24:22/tcp
     run_limits:
       max_concurrent_runs: 1
     graph:
@@ -2454,6 +2349,7 @@ flows:
             TF_VAR_service_name: '{{ inputs.service_name }}'
             TF_VAR_service_prefix: '{{ inputs.service_prefix }}'
             TF_VAR_routers: '{{ targets.tf_targets | map(attribute=''name'') | list | tojson }}'
+          egress_mode: deny-all
         policy:
           timeout_sec: 300
           retries: 0
@@ -2513,6 +2409,7 @@ flows:
           timeout_seconds: 240
           command:
           - sh /attachments/apply.sh
+          egress_mode: deny-all
         policy:
           timeout_sec: 300
           retries: 0
@@ -2540,6 +2437,7 @@ flows:
             TF_VAR_service_name: '{{ inputs.service_name }}'
             TF_VAR_service_prefix: '{{ inputs.service_prefix }}'
             TF_VAR_routers: '{{ targets.tf_targets | map(attribute=''name'') | list | tojson }}'
+          egress_mode: deny-all
         policy:
           timeout_sec: 300
           retries: 0
@@ -2793,223 +2691,6 @@ flows:
           - dc2-core-01
           config:
             role: tf_targets
-            multiple: true
-            option_source:
-              kind: inventory.devices
-      edges: []
-- name: 'IaC: Ansible router drift remediation'
-  description: Audit the selected FRR routers for the golden loopback description and, while any router drifts, remediate
-    with an Ansible raw/vtysh playbook — re-auditing each pass until the fleet converges or the loop's iteration cap routes
-    to a manual-intervention terminal. Run variables count the passes and record the verdict.
-  definition:
-    graph:
-      nodes:
-      - id: start
-        name: Start
-        type: start
-        position_x: 0
-        position_y: 280
-      - id: sv_init
-        name: Init audit state
-        type: set_vars
-        position_x: 200
-        position_y: 280
-        assignments:
-        - name: compliant
-          expr: 'false'
-        - name: passes
-          expr: '0'
-      - id: fix_loop
-        name: Until compliant
-        type: loop
-        loop_mode: while
-        condition: not (run.vars.compliant | default(false))
-        max_iterations: 3
-        position_x: 620
-        position_y: 60
-        width: 1640
-        height: 460
-      - id: audit
-        name: Audit running config
-        type: step
-        kind: CHECK
-        phase: VERIFY
-        handler: netcli.collect_evidence
-        scope_id: fix_loop
-        position_x: 60
-        position_y: 100
-        target_selectors:
-        - type: role
-          role: drift_targets
-        params:
-          commands:
-          - show running-config
-        policy:
-          timeout_sec: 120
-          retries: 0
-          on_failure: CONTINUE
-          evidence_required: true
-      - id: check
-        name: Golden description present?
-        type: step
-        kind: CHECK
-        phase: VERIFY
-        handler: evidence.assert
-        scope_id: fix_loop
-        position_x: 440
-        position_y: 100
-        params:
-          artifact_step_id: audit
-          target_role: drift_targets
-          command: show running-config
-          operator: contains
-          expected: managed by Meridian NetOps
-          message: At least one router lacks the golden loopback description.
-        policy:
-          timeout_sec: 60
-          retries: 0
-          on_failure: CONTINUE
-          evidence_required: false
-      - id: sv_done
-        name: Mark compliant
-        type: set_vars
-        scope_id: fix_loop
-        position_x: 820
-        position_y: 60
-        assignments:
-        - name: compliant
-          expr: 'true'
-        - name: passes
-          expr: (run.vars.passes | default(0) | int) + 1
-      - id: remediate
-        name: Ansible remediation
-        type: step
-        kind: EXECUTE
-        phase: IMPLEMENTATION
-        handler: container.run
-        scope_id: fix_loop
-        position_x: 820
-        position_y: 260
-        mounted_files:
-        - routers.ini
-        - remediate.yml
-        - remediate.sh
-        params:
-          image: alpine:3.22
-          working_dir: /workspace
-          network_mode: host
-          timeout_seconds: 300
-          command:
-          - sh /attachments/remediate.sh
-          env:
-            LIMIT_HOSTS: '{{ targets.drift_targets | map(attribute=''name'') | join('','') }}'
-            LAB_USER: '{{ secret(''vault://orgs/default/secrets/meridian/lab/ssh/username'') }}'
-            LAB_PASSWORD: '{{ secret(''vault://orgs/default/secrets/meridian/lab/ssh/password'') }}'
-        policy:
-          timeout_sec: 330
-          retries: 0
-          on_failure: CONTINUE
-          evidence_required: false
-      - id: sv_retry
-        name: Mark drifting
-        type: set_vars
-        scope_id: fix_loop
-        position_x: 1200
-        position_y: 260
-        assignments:
-        - name: compliant
-          expr: 'false'
-        - name: passes
-          expr: (run.vars.passes | default(0) | int) + 1
-      - id: fix_end
-        name: Loop End
-        type: loop_end
-        loop_ref: fix_loop
-        scope_id: fix_loop
-        position_x: 1562
-        position_y: 426
-      - id: converged
-        name: Fleet compliant
-        type: terminal
-        terminal_status: success
-        position_x: 2380
-        position_y: 240
-      - id: manual
-        name: Manual intervention required
-        type: terminal
-        terminal_status: failure
-        position_x: 2380
-        position_y: 440
-      edges:
-      - id: e_start_init
-        source: start:start
-        target: sv_init
-      - id: e_init_loop
-        source: sv_init:success
-        target: fix_loop
-      - id: e_loop_audit
-        source: fix_loop:iterate
-        target: audit
-      - id: e_audit_check
-        source: audit:success
-        target: check
-      - id: e_audit_retry
-        source: audit:failure
-        target: sv_retry
-      - id: e_check_done
-        source: check:success
-        target: sv_done
-      - id: e_check_remediate
-        source: check:failure
-        target: remediate
-      - id: e_remediate_retry
-        source: remediate:success
-        target: sv_retry
-      - id: e_remediate_failed
-        source: remediate:failure
-        target: sv_retry
-      - id: e_done_end
-        source: sv_done:success
-        target: fix_end
-      - id: e_retry_end
-        source: sv_retry:success
-        target: fix_end
-      - id: e_loop_converged
-        source: fix_loop:done
-        target: converged
-      - id: e_loop_manual
-        source: fix_loop:max_iterations
-        target: manual
-    interface_graph:
-      nodes:
-      - id: sec_targets
-        kind: section
-        position_x: 80
-        position_y: 80
-        width: 520
-        height: 200
-        data:
-          label: Routers
-          runtime_layout: card
-          collapsible: false
-      - id: f_targets
-        kind: field
-        parent_id: sec_targets
-        position_x: 40
-        position_y: 60
-        data:
-          label: Routers to audit
-          field_id: drift_targets
-          field_type: inventory.device
-          required: true
-          description: FRR routers audited for the golden loopback description. Preselects the cores the Terraform demo does
-            NOT manage — both demos stamp the same "interface lo" description, so overlapping targets would overwrite each
-            other's assertions. Remediation is limited to this selection.
-          default_value:
-          - dc1-core-02
-          - dc2-core-02
-          config:
-            role: drift_targets
             multiple: true
             option_source:
               kind: inventory.devices
@@ -3338,7 +3019,7 @@ flow_attachments:
     \ Gitea, seeing a password that is not an\n# access token, falls back to a normal username+password login — so the backups\n\
     # authenticate out of the box with no token to mint or print. The password comes\n# in as WRITE_PASSWORD (resolved from\
     \ the same secret Hegemony reads), so the two\n# ends always match.\n# Idempotent — safe to re-run.\nset -e\n\nGITEA_CONTAINER=\"\
-    ${GITEA_CONTAINER:-meridian-gitea}\"\nBASE=\"${GITEA_URL:-http://host.docker.internal:3000}\"\nADMIN_USER=\"${ADMIN_USER:-meridian-admin}\"\
+    ${GITEA_CONTAINER:-meridian-gitea}\"\nBASE=\"${GITEA_URL:-http://dind:3000}\"\nADMIN_USER=\"${ADMIN_USER:-meridian-admin}\"\
     \nADMIN_PASSWORD=\"${ADMIN_PASSWORD:-demo-gitea-admin-password}\"\nORG=\"${GITEA_ORG:-meridian}\"\n# The service account\
     \ Hegemony authenticates as. Its name MUST equal the fixed\n# username Hegemony's git client sends (see apps/api/services/git_ops.py).\n\
     GIT_USER=\"x-access-token\"\nWRITE_PASSWORD=\"${WRITE_PASSWORD:-}\"\n\n# Feed the admin credentials to curl through a\
@@ -3397,23 +3078,6 @@ flow_attachments:
     \necho \"  flow-backups and platform-backups are writable by Hegemony out of the box:\"\necho \"  the ${GIT_USER} service\
     \ account authenticates with the meridian-gitea-token\"\necho \"  secret as its password. Nothing secret is minted or\
     \ printed here.\"\n"
-- flow: 'Net: End-to-end reachability test'
-  filename: data/ping-destinations.csv
-  content: 'area,address,name
-
-    Lab DC1,10.101.1.10,dc1-srv-01 endpoint LAN
-
-    Lab Branch 1,10.102.1.10,br1-srv-01 endpoint LAN
-
-    Lab Branch 2,10.103.1.10,br2-srv-01 endpoint LAN
-
-    Lab DC2,10.104.1.10,dc2-srv-01 endpoint LAN
-
-    Backbone,10.255.255.1,dc1-core-01 loopback
-
-    Backbone,10.255.255.9,dc2-core-01 loopback
-
-    '
 - flow: 'IaC: Ansible server baseline rollout'
   filename: hosts.ini
   content: '# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
@@ -3490,15 +3154,21 @@ flow_attachments:
     #\n# The playbook's exit code is captured explicitly (not piped through tee) —\n# it must reach the step verbatim: a failing\
     \ host is what trips the flow's\n# canary break edge and halts the rollout.\nset -eu\n\n: \"${TARGET_HOST:?TARGET_HOST\
     \ is required (the host to baseline)}\"\n: \"${LAB_USER:?LAB_USER is required}\"\n: \"${LAB_PASSWORD:?LAB_PASSWORD is\
-    \ required}\"\n\napk add --no-cache ansible-core sshpass openssh-client >/dev/null\nmkdir -p /artifacts/new\n\nEXTRA_VARS=$(mktemp)\n\
-    trap 'rm -f \"${EXTRA_VARS}\"' EXIT\n# JSON is valid YAML and json.dump escapes anything a credential can\n# contain —\
-    \ quotes or newlines in the secret cannot corrupt the vars file.\npython3 - \"${EXTRA_VARS}\" <<'PY'\nimport json\nimport\
-    \ os\nimport sys\n\nwith open(sys.argv[1], \"w\") as handle:\n    json.dump(\n        {\n            \"ansible_user\"\
-    : os.environ[\"LAB_USER\"],\n            \"ansible_password\": os.environ[\"LAB_PASSWORD\"],\n            \"ansible_become_password\"\
-    : os.environ[\"LAB_PASSWORD\"],\n        },\n        handle,\n    )\nPY\n\necho \"Applying server baseline to ${TARGET_HOST}\
-    \ ...\"\nLOG=\"/artifacts/new/baseline-${TARGET_HOST}.txt\"\nrc=0\nansible-playbook \\\n  -i /attachments/hosts.ini \\\
-    \n  --limit \"${TARGET_HOST}\" \\\n  -e \"@${EXTRA_VARS}\" \\\n  /attachments/baseline.yml >\"${LOG}\" 2>&1 || rc=$?\n\
-    cat \"${LOG}\"\nexit \"${rc}\"\n"
+    \ required}\"\n\n# Egress guardrail self-test. This step runs under an allow-listed egress\n# policy that denies the cloud\
+    \ metadata endpoint (169.254.169.254). Prove the\n# guard is live by trying to reach it: the connect is dropped on the\
+    \ sandbox\n# firewall, so the step's post-run egress report shows a non-zero drop count.\n# Non-fatal and short (2s) so\
+    \ it never delays the rollout; a *reachable*\n# endpoint would mean the policy is NOT being enforced, which is worth a\
+    \ shout.\nif wget -q -T 2 -O /dev/null http://169.254.169.254/latest/meta-data/ 2>/dev/null; then\n  echo \"WARNING: cloud\
+    \ metadata endpoint was reachable — egress policy not enforced?\"\nelse\n  echo \"Egress guardrail OK: metadata endpoint\
+    \ blocked (see the step's egress report for the drop).\"\nfi\n\napk add --no-cache ansible-core sshpass openssh-client\
+    \ >/dev/null\nmkdir -p /artifacts/new\n\nEXTRA_VARS=$(mktemp)\ntrap 'rm -f \"${EXTRA_VARS}\"' EXIT\n# JSON is valid YAML\
+    \ and json.dump escapes anything a credential can\n# contain — quotes or newlines in the secret cannot corrupt the vars\
+    \ file.\npython3 - \"${EXTRA_VARS}\" <<'PY'\nimport json\nimport os\nimport sys\n\nwith open(sys.argv[1], \"w\") as handle:\n\
+    \    json.dump(\n        {\n            \"ansible_user\": os.environ[\"LAB_USER\"],\n            \"ansible_password\"\
+    : os.environ[\"LAB_PASSWORD\"],\n            \"ansible_become_password\": os.environ[\"LAB_PASSWORD\"],\n        },\n\
+    \        handle,\n    )\nPY\n\necho \"Applying server baseline to ${TARGET_HOST} ...\"\nLOG=\"/artifacts/new/baseline-${TARGET_HOST}.txt\"\
+    \nrc=0\nansible-playbook \\\n  -i /attachments/hosts.ini \\\n  --limit \"${TARGET_HOST}\" \\\n  -e \"@${EXTRA_VARS}\"\
+    \ \\\n  /attachments/baseline.yml >\"${LOG}\" 2>&1 || rc=$?\ncat \"${LOG}\"\nexit \"${rc}\"\n"
 - flow: 'IaC: Terraform router service'
   filename: service.tf
   content: "# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier: AGPL-3.0-or-later\n\
@@ -3603,111 +3273,6 @@ flow_attachments:
     \ 2>&1 || rc=$?\ncat /artifacts/new/terraform-verify.txt\n\ncase \"${rc}\" in\n  0) echo \"Converged: state matches the\
     \ desired configuration.\" ;;\n  2) echo \"Drift detected: the state does not match the desired configuration.\" >&2 ;;\n\
     \  *) echo \"terraform plan failed (exit ${rc}).\" >&2 ;;\nesac\nexit \"${rc}\"\n"
-- flow: 'IaC: Ansible router drift remediation'
-  filename: routers.ini
-  content: '# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
-
-    # SPDX-License-Identifier: AGPL-3.0-or-later
-
-    #
-
-    # Static Ansible inventory for the lab''s FRR routers. Their SSH login shell IS
-
-    # vtysh (see src/files/lab/Dockerfile), so playbooks drive them with raw tasks
-
-    # only: each raw command string lands in `vtysh -c` — no python needed on the
-
-    # routers, the standard pattern for network gear. Credentials are injected by
-
-    # the flow from the meridian-lab-ssh vault secret as extra vars.
-
-    [core]
-
-    dc1-core-01 ansible_host=172.20.30.11
-
-    dc1-core-02 ansible_host=172.20.30.12
-
-    dc2-core-01 ansible_host=172.20.30.41
-
-    dc2-core-02 ansible_host=172.20.30.42
-
-
-    [edge]
-
-    br1-edge-01 ansible_host=172.20.30.21
-
-    br2-edge-01 ansible_host=172.20.30.31
-
-
-    [access]
-
-    dc1-acc-01 ansible_host=172.20.30.13
-
-    dc1-acc-02 ansible_host=172.20.30.14
-
-    dc2-acc-01 ansible_host=172.20.30.43
-
-    br1-acc-01 ansible_host=172.20.30.22
-
-    br2-acc-01 ansible_host=172.20.30.32
-
-
-    [routers:children]
-
-    core
-
-    edge
-
-    access
-
-
-    [routers:vars]
-
-    ansible_connection=ssh
-
-    # accept-new pins each host key on first contact and rejects a mid-run change.
-
-    # The known-hosts file lives in the throwaway remediation container''s /tmp, so
-
-    # it is fresh every run — regenerated lab host keys never conflict across
-
-    # deploys.
-
-    ansible_ssh_common_args=-o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/lab-known-hosts
-
-    '
-- flow: 'IaC: Ansible router drift remediation'
-  filename: remediate.yml
-  content: "# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier: AGPL-3.0-or-later\n\
-    #\n# FRR router remediation playbook for the \"IaC: Ansible router drift\n# remediation\" flow. The routers' SSH login\
-    \ shell is vtysh, so every raw\n# command string is executed by `vtysh -c` on the router — the python-free\n# pattern\
-    \ real network fleets use. Embedded newlines in one raw block become\n# sequential vtysh commands, exactly like pasting\
-    \ into the CLI. The flow's\n# while-loop re-audits with netcli after this play and iterates until the\n# running config\
-    \ carries the golden loopback description.\n- name: Meridian router golden-config remediation\n  hosts: all\n  gather_facts:\
-    \ false\n  tasks:\n    - name: Stamp the golden loopback description\n      ansible.builtin.raw: |\n        configure\
-    \ terminal\n        interface lo\n        description managed by Meridian NetOps\n        end\n      changed_when: true\n\
-    \n    - name: Read back the running config\n      # This FRR build has no per-interface running-config filter — read the\n\
-    \      # whole config and assert on the marker line.\n      ansible.builtin.raw: |\n        show running-config\n    \
-    \  register: lo_config\n      changed_when: false\n\n    - name: Assert the description is present\n      ansible.builtin.assert:\n\
-    \        that:\n          - \"'managed by Meridian NetOps' in lo_config.stdout\"\n        success_msg: \"{{ inventory_hostname\
-    \ }} carries the golden description.\"\n        fail_msg: \"{{ inventory_hostname }} still lacks the golden description.\"\
-    \n"
-- flow: 'IaC: Ansible router drift remediation'
-  filename: remediate.sh
-  content: "#!/bin/sh\n# SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>\n# SPDX-License-Identifier:\
-    \ AGPL-3.0-or-later\n#\n# One remediation pass: run the router remediation playbook against the\n# routers the launch\
-    \ form selected (--limit $LIMIT_HOSTS, a comma-separated\n# device-name list the flow renders from its inputs). Same container\
-    \ recipe\n# as rolling.sh; the exit code is captured explicitly so an unreachable or\n# still-drifting router fails the\
-    \ step and the flow's while-loop retries.\nset -eu\n\n: \"${LIMIT_HOSTS:?LIMIT_HOSTS is required (comma-separated router\
-    \ names)}\"\n: \"${LAB_USER:?LAB_USER is required}\"\n: \"${LAB_PASSWORD:?LAB_PASSWORD is required}\"\n\napk add --no-cache\
-    \ ansible-core sshpass openssh-client >/dev/null\nmkdir -p /artifacts/new\n\nEXTRA_VARS=$(mktemp)\ntrap 'rm -f \"${EXTRA_VARS}\"\
-    ' EXIT\n# JSON is valid YAML and json.dump escapes anything a credential can\n# contain — quotes or newlines in the secret\
-    \ cannot corrupt the vars file.\npython3 - \"${EXTRA_VARS}\" <<'PY'\nimport json\nimport os\nimport sys\n\nwith open(sys.argv[1],\
-    \ \"w\") as handle:\n    json.dump(\n        {\n            \"ansible_user\": os.environ[\"LAB_USER\"],\n            \"\
-    ansible_password\": os.environ[\"LAB_PASSWORD\"],\n        },\n        handle,\n    )\nPY\n\necho \"Remediating routers:\
-    \ ${LIMIT_HOSTS} ...\"\nLOG=\"/artifacts/new/remediation.txt\"\nrc=0\nansible-playbook \\\n  -i /attachments/routers.ini\
-    \ \\\n  --limit \"${LIMIT_HOSTS}\" \\\n  -e \"@${EXTRA_VARS}\" \\\n  /attachments/remediate.yml >\"${LOG}\" 2>&1 || rc=$?\n\
-    cat \"${LOG}\"\nexit \"${rc}\"\n"
 variables:
 - name: ORG_NAME
   value: Meridian Networks
@@ -3719,12 +3284,14 @@ variables:
   value: Sun 02:00-04:00 UTC
   description: Standard maintenance window, recorded in backup manifests.
 - name: GITEA_HOST
-  value: localhost
-  description: Host that publishes the demo Gitea service. The flows that reach Gitea run as host-networked containers, so
-    localhost:3000 addresses it directly.
+  value: dind
+  description: Host that publishes the demo Gitea service. Gitea runs inside the platform's dind sandbox daemon and binds
+    :3000 in the dind netns, so the compose-DNS name `dind` addresses it both from host-networked flow steps (which share
+    that netns) and from the platform API. The dind service re-publishes the port to the operator's browser as localhost:3000.
 - name: GITEA_PORT
   value: '3000'
-  description: Published port of the demo Gitea service.
+  description: Published port of the demo Gitea service (bound in the dind netns and advertised in ROOT_URL). Changing it
+    also requires re-pointing the platform dind service's browser re-publish, which targets sandbox port 3000 by default.
 - name: GITEA_ORG
   value: meridian
   description: Gitea organisation that owns the source-of-truth and backup repos.
@@ -3733,7 +3300,9 @@ variables:
   description: Base URL of the demo Gitea service (composed from GITEA_HOST/PORT).
 - name: LAB_MGMT_SUBNET
   value: 172.20.30.0/24
-  description: Management subnet containerlab assigns to the FRR lab routers.
+  description: 'Management subnet containerlab assigns to the FRR lab routers. Purely documentary: no flow references it (the
+    topology hardcodes the subnet in topology.clab.yml, and workers reach the lab only through the bastion, never by routing).
+    Kept as the canonical record of the lab subnet — must match topology.clab.yml.'
 notification_destinations:
 - name: Meridian NOC Email
   type: email
@@ -3924,10 +3493,6 @@ flow_subscriptions:
   event: run.completed
   enabled: false
 - flow: 'Net: Lab routing health check'
-  destination: Meridian Security Email
-  event: run.failed
-  enabled: true
-- flow: 'Net: End-to-end reachability test'
   destination: Meridian Security Email
   event: run.failed
   enabled: true

@@ -6,14 +6,17 @@
 # It builds the lab images (FRR+sshd routers, Alpine+sshd endpoint hosts),
 # deploys an 11-router / 4-host multi-area OSPF lab (two datacenters + two
 # branches, see src/files/lab/topology.clab.yml) with fixed management
-# addresses, attaches the lab management network to the Hegemony workers (so
-# the seeded inventory becomes reachable), and optionally stands up a local
-# Gitea for config backups. It then PARKS on an approval gate
-# WITH NO EXPIRY: the run stays paused — the lab keeps running on the host —
-# while you SSH to the routers and exercise the other flows against them.
-# Approving the gate tears the lab down; rejecting leaves it running. This is
-# the only flow that touches the host Docker daemon, and a good example of a
-# run that stays open for hours or days.
+# addresses, deploys the lab bastion next to it (the lab lives inside the
+# platform's dind sandbox daemon; workers reach it only through the
+# bastion — SSH sessions ProxyJump via dind:2222 and TCP probes use the
+# authenticated SOCKS5 listener on dind:1080 — so the seeded inventory
+# becomes reachable with no host routing at all), and optionally
+# stands up a local Gitea for config backups. It then PARKS on an approval
+# gate WITH NO EXPIRY: the run stays paused — the lab keeps running in the
+# sandbox — while you SSH to the routers and exercise the other flows
+# against them. Approving the gate tears the lab down; rejecting leaves it
+# running. This is the flow that administers the sandbox daemon, and a good
+# example of a run that stays open for hours or days.
 
 schema_version: 2
 
@@ -21,10 +24,12 @@ flows:
   - name: "Lab: Provision and tear down demo datacenter"
     description: >-
       Build the lab images, deploy the multi-area OSPF lab (11 routers and 4
-      Linux endpoint hosts across dc1, dc2 and two branches), attach the lab
-      network to the workers, and optionally stand up Gitea; then hold at an
-      approval gate (no expiry) so you can interact with the lab. Approve to
-      tear it down, reject to leave it running.
+      Linux endpoint hosts across dc1, dc2 and two branches), deploy the lab
+      bastion the workers tunnel through — SSH ProxyJump and authenticated
+      SOCKS5 via meridian-bastion (the lab runs inside the platform's dind
+      sandbox) — and optionally stand up Gitea; then hold at an approval gate
+      (no expiry) so you can interact with the lab. Approve to tear it down,
+      reject to leave it running.
     definition:
       # Only one lab may exist at a time: this flow drives the host Docker
       # daemon and deploys a topology on fixed management addresses, so a
@@ -131,8 +136,8 @@ flows:
               retries: 0
               on_failure: FAIL_RUN
               evidence_required: true
-          - id: connect_workers
-            name: Attach lab network to workers
+          - id: deploy_bastion
+            name: Deploy lab bastion (SSH + SOCKS5)
             type: step
             kind: ACTION
             phase: IMPLEMENTATION
@@ -144,22 +149,109 @@ flows:
               working_dir: /workspace
               attach_docker_socket: true
               network_mode: host
-              timeout_seconds: 120
+              timeout_seconds: 180
+              env:
+                JUMP_USER: "{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/username') }}"
+                JUMP_PASSWORD: "{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/password') }}"
               command:
                 - |
                   set -e
-                  # Give the Hegemony workers an interface on the lab management
-                  # network so netcli can SSH to the routers. The compose service
-                  # label targets exactly the Hegemony workers (a name substring
-                  # would also catch unrelated containers such as NetBox workers);
-                  # -q filters avoid docker --format templates colliding with
-                  # Jinja braces.
-                  COUNT=0
-                  for c in $(docker ps -q --filter label=com.docker.compose.service=worker); do
-                    docker network connect meridian-lab-mgmt "$c" 2>/dev/null || true
-                    COUNT=$((COUNT + 1))
+                  docker rm -f meridian-bastion 2>/dev/null || true
+                  # The bastion is the workers' ONLY path into the lab
+                  # (design: dind-sandbox §11): device SSH sessions ProxyJump
+                  # through :2222 and TCP probes ride the authenticated SOCKS5
+                  # listener on :1080. Both publishes bind in the dind netns —
+                  # workers reach them as dind:2222 / dind:1080 over the
+                  # compose network, and nothing is published to the host. No
+                  # host route, no ip_forward, no DOCKER-USER edits anywhere.
+                  # --restart brings it back after a dind restart (same
+                  # lifecycle as Gitea); redeploying the lab recreates it.
+                  docker run -d --name meridian-bastion \
+                    --restart unless-stopped \
+                    --network meridian-lab-mgmt \
+                    -p 2222:22 -p 1080:1080 \
+                    -e JUMP_USER="$JUMP_USER" \
+                    -e JUMP_PASSWORD="$JUMP_PASSWORD" \
+                    alpine:3.20 \
+                    sh -c '
+                      set -e
+                      # --restart unless-stopped re-runs this whole script on
+                      # every restart (so the bastion survives a dind bounce,
+                      # same lifecycle as Gitea). The container filesystem
+                      # persists across restarts, so this MUST be idempotent:
+                      # a second `adduser` or a `git clone` into an existing
+                      # dir fails under `set -e` and wedges the bastion in a
+                      # crash loop with the listeners down. Guard every one-time
+                      # setup step and only (re)start the daemons at the end.
+                      #
+                      # microsocks is not in the alpine:3.20 stable repos
+                      # (main/community) — only in edge/testing — so build the
+                      # tiny single-binary SOCKS5 server from source. build-base
+                      # + git are dropped again once the binary is in place.
+                      [ -x /usr/sbin/sshd ] || apk add --no-cache openssh >/dev/null
+                      if [ ! -x /usr/local/bin/microsocks ]; then
+                        apk add --no-cache --virtual .ms-build build-base git >/dev/null
+                        rm -rf /tmp/microsocks
+                        # Pinned to the v1.0.5 commit, not the default branch:
+                        # this builds and runs as root in a container that also
+                        # holds the bastion password, so the source must be a
+                        # revision someone reviewed rather than whatever HEAD
+                        # happens to be at demo time.
+                        mkdir -p /tmp/microsocks
+                        git -C /tmp/microsocks init -q
+                        git -C /tmp/microsocks fetch -q --depth 1 \
+                          https://github.com/rofl0r/microsocks \
+                          98421a21c4adc4c77c0cf3a5d650cc28ad3e0107 >/dev/null 2>&1
+                        git -C /tmp/microsocks checkout -q FETCH_HEAD
+                        make -C /tmp/microsocks >/dev/null
+                        install -m 0755 /tmp/microsocks/microsocks /usr/local/bin/microsocks
+                        apk del .ms-build >/dev/null
+                        rm -rf /tmp/microsocks
+                      fi
+                      # Create the user once; always (re)set the password so a
+                      # credential rotation still takes effect on a restart.
+                      id "$JUMP_USER" >/dev/null 2>&1 || adduser -D "$JUMP_USER"
+                      printf "%s:%s\n" "$JUMP_USER" "$JUMP_PASSWORD" | chpasswd
+                      # Generate the host key explicitly instead of trusting
+                      # `ssh-keygen -A`: freshly-pulled alpine:3.20 openssh
+                      # builds have shipped where -A leaves no usable host key
+                      # and sshd exits "no hostkeys available -- exiting". An
+                      # ed25519 key (every transport here supports it) passed
+                      # with -h makes startup deterministic; reuse an existing
+                      # key so the bastion identity stays stable across restarts.
+                      [ -s /etc/ssh/ssh_host_ed25519_key ] || ssh-keygen -t ed25519 -f /etc/ssh/ssh_host_ed25519_key -N ""
+                      # ProxyJump opens a direct-tcpip channel to the device, so
+                      # the bastion needs TCP forwarding. Alpine openssh ships
+                      # AllowTcpForwarding=no by default (aports
+                      # disable-forwarding-by-default.patch) — NOT the upstream
+                      # default-on — so re-enable it explicitly, or sshd refuses
+                      # the hop with "administratively prohibited". Password auth
+                      # is the jump credential the inventory provider ships.
+                      echo "bastion: setup ok; starting sshd (:22) + microsocks (:1080)"
+                      /usr/sbin/sshd -h /etc/ssh/ssh_host_ed25519_key -o PasswordAuthentication=yes -o PermitRootLogin=no -o AllowTcpForwarding=yes
+                      # RFC 1929: the SOCKS listener always authenticates —
+                      # neither published port is an open proxy.
+                      exec microsocks -u "$JUMP_USER" -P "$JUMP_PASSWORD" -p 1080
+                    '
+                  # docker run -d only proves creation; the listeners come up
+                  # after the in-container build/apk step. Probe them from
+                  # INSIDE the bastion (alpine busybox `nc -z`, always present)
+                  # via docker exec, so readiness never depends on whether this
+                  # clab image ships nc. sshd binds :22 and microsocks :1080
+                  # internally (published as :2222/:1080 in the dind netns). The
+                  # gate blocks the approval step until the only worker access
+                  # path is actually up.
+                  for i in $(seq 1 60); do
+                    if docker exec meridian-bastion sh -c \
+                        'nc -z 127.0.0.1 22 && nc -z 127.0.0.1 1080' 2>/dev/null; then
+                      echo "Bastion ready: SSH ProxyJump dind:2222, SOCKS5 dind:1080."
+                      exit 0
+                    fi
+                    sleep 2
                   done
-                  echo "Attached ${COUNT} worker container(s) to meridian-lab-mgmt ({{ vars.LAB_MGMT_SUBNET }})"
+                  echo "TIMEOUT waiting for bastion listeners (2222/1080)" >&2
+                  docker logs meridian-bastion 2>&1 | tail -50 || true
+                  exit 1
           - id: wait_ready
             name: Wait for FRR to answer on all routers
             type: step
@@ -253,12 +345,62 @@ flows:
                   esac
                   set -e
                   docker rm -f meridian-gitea 2>/dev/null || true
+                  # --restart brings Gitea back after a dind daemon restart
+                  # (data is still demo-ephemeral; a redeploy recreates it).
+                  # ROOT_URL stays on the browser-facing address: it controls
+                  # the links and clone URLs Gitea DISPLAYS, and operators
+                  # reach the UI at localhost via the platform's dind port
+                  # re-publish. Flows and the platform API never read
+                  # ROOT_URL — they use the configured {{ vars.GITEA_URL }}
+                  # (http://dind:3000) repository URLs directly.
                   docker run -d --name meridian-gitea \
-                    -p 3000:3000 \
+                    --restart unless-stopped \
+                    -p {{ vars.GITEA_PORT }}:3000 \
                     -e GITEA__security__INSTALL_LOCK=true \
-                    -e GITEA__server__ROOT_URL="http://localhost:3000/" \
+                    -e GITEA__server__ROOT_URL="http://localhost:{{ vars.GITEA_PORT }}/" \
                     gitea/gitea:1.22-rootless
                   sh /attachments/seed.sh
+          - id: monitor_lab
+            name: Watch core-router reachability
+            type: step
+            kind: CHECK
+            phase: IMPLEMENTATION
+            handler: monitor.connectivity
+            position_x: 1400
+            position_y: 480
+            # The four OSPF core routers, as direct IP targets. This is the
+            # node's "Additional IP Targets" field in the editor (target_selectors
+            # of type ip), NOT a handler param — the monitor reads it first.
+            target_selectors:
+              - type: ip
+                addresses:
+                  - 172.20.30.11
+                  - 172.20.30.12
+                  - 172.20.30.41
+                  - 172.20.30.42
+            params:
+              # Watch the four core routers come up while the lab deploys.
+              # tcp_connect on :22 through the bastion's authenticated SOCKS5
+              # listener (dind:1080) — the only worker path into the lab
+              # management subnet. schedule_mode until_join keeps the monitor
+              # running until the deploy join fires (the termination edge
+              # below), so the reachability count climbs from 0 to 4 as the
+              # sandbox, bastion, and routers come up, then it stops right
+              # before the approval gate.
+              check_type: tcp_connect
+              port: 22
+              timeout_sec: 4
+              interval_ms: 5000
+              schedule_mode: until_join
+              socks_proxy: "socks5://{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/username') }}:{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/password') }}@dind:1080"
+            policy:
+              # Observability only: a monitor hiccup must never fail the lab
+              # bring-up. This node reaches the join through a termination edge,
+              # not an execution one, so it is not one of the join's awaited
+              # branches — the join fires on the deploy branches regardless, and
+              # CONTINUE keeps a failed probe from propagating as a run failure.
+              on_failure: CONTINUE
+              evidence_required: false
           - id: join
             name: Datacenter ready
             type: join
@@ -301,10 +443,11 @@ flows:
                 The lab is running: 11 routers and 4 Linux endpoint hosts in
                 172.20.30.0/24 (dc1 .11-.15, br1 .21-.23, br2 .31-.33,
                 dc2 .41-.44; user clab). Exercise the Ops/Net flows against
-                them — including the end-to-end reachability test from the
-                endpoint hosts — and browse Gitea at http://localhost:3000 if
-                deployed. This gate never expires. APPROVE to tear the lab down
-                and clean the host; REJECT to leave it running.
+                them, and browse Gitea at
+                http://localhost:{{ vars.GITEA_PORT }} if deployed (the
+                platform's dind service re-publishes the sandbox port to your
+                machine). This gate never expires. APPROVE to tear the lab
+                down and clean the sandbox; REJECT to leave it running.
           - id: teardown
             name: Destroy lab and Gitea
             type: step
@@ -343,12 +486,12 @@ flows:
                       "${WORKDIR}/topology.clab.yml" > "${TOPOLOGY}"
                   fi
                   containerlab destroy -t "${TOPOLOGY}" --cleanup || true
-                  # The workers attached during bootstrap still hold endpoints on
-                  # the management network; detach them or the network removal is
-                  # refused and the network (and worker interfaces) linger.
-                  for c in $(docker ps -aq --filter network=meridian-lab-mgmt); do
-                    docker network disconnect -f meridian-lab-mgmt "$c" 2>/dev/null || true
-                  done
+                  # The bastion is the only non-clab endpoint on the mgmt
+                  # network: remove it first so the network rm cannot fail on
+                  # an attached container. Workers never attach to sandbox
+                  # networks — they reach the lab through the bastion — so
+                  # nothing else needs detaching.
+                  docker rm -f meridian-bastion 2>/dev/null || true
                   docker network rm meridian-lab-mgmt 2>/dev/null || true
                   rm -rf "${WORKDIR}" || true
                   REMOVE_GITEA=$(printf '%s' "{{ inputs.remove_gitea }}" | tr 'A-Z' 'a-z')
@@ -398,17 +541,17 @@ flows:
           - id: e_fork_gitea
             source: fork:fork
             target: deploy_gitea
-          - id: e_lab_connect
+          - id: e_lab_bastion
             source: deploy_lab:success
-            target: connect_workers
+            target: deploy_bastion
           - id: e_lab_join_fail
             source: deploy_lab:failure
             target: join
-          - id: e_connect_wait
-            source: connect_workers:success
+          - id: e_bastion_wait
+            source: deploy_bastion:success
             target: wait_ready
-          - id: e_connect_join_fail
-            source: connect_workers:failure
+          - id: e_bastion_join_fail
+            source: deploy_bastion:failure
             target: join
           - id: e_wait_join
             source: wait_ready:success
@@ -422,6 +565,17 @@ flows:
           - id: e_gitea_join_fail
             source: deploy_gitea:failure
             target: join
+          # Start the reachability monitor in parallel with the deploy branches.
+          - id: e_fork_monitor
+            source: fork:fork
+            target: monitor_lab
+          # Termination edge (not execution): when the deploy join fires, stop
+          # the monitor. It is deliberately NOT an execution input to the join,
+          # so the join's awaited-branch count stays the two deploy branches.
+          - id: e_monitor_join_term
+            source: monitor_lab
+            target: join
+            type: termination
           - id: e_join_converge
             source: join:joined
             target: converge_check

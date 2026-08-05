@@ -16,11 +16,6 @@
 #  * "Lab routing health check" verifies OSPF adjacencies and reachability;
 #    its form offers an inventory-provider select cascading into the router
 #    picker.
-#  * "End-to-end reachability test" logs into the Linux endpoint hosts with
-#    shell.execute and pings across the routed fabric — the exec-channel
-#    (remote shell) paradigm next to netcli's prompt-scraping. Its destination
-#    options come from a CSV attachment (data/ping-destinations.csv) with an
-#    area → destination cascade across two columns of the same file.
 
 schema_version: 2
 
@@ -101,7 +96,7 @@ flows:
                       DRY=false
                       # Clone so each backup appends to the repository history.
                       git -c credential.helper="$CRED_HELPER" clone -q \
-                        "http://localhost:3000/{{ vars.GITEA_ORG }}/config-backups.git" .
+                        "{{ vars.GITEA_URL }}/{{ vars.GITEA_ORG }}/config-backups.git" .
                       ;;
                   esac
                   git config user.email "{{ vars.NOC_CONTACT }}"
@@ -714,6 +709,10 @@ flows:
               port: 22
               timeout_sec: 10
               attempts: 2
+              # Workers have no route into the lab subnet; TCP probes ride
+              # the lab bastion's authenticated SOCKS5 listener instead
+              # (dind:1080, deployed by the Bootstrap flow).
+              socks_proxy: "socks5://{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/username') }}:{{ secret('vault://orgs/default/secrets/meridian/lab/bastion/password') }}@dind:1080"
             policy:
               timeout_sec: 60
               retries: 0
@@ -866,238 +865,3 @@ flows:
               - semantic_type: options_filter
                 value: provider_id
 
-  - name: "Net: End-to-end reachability test"
-    description: >-
-      Log into the selected Linux endpoint hosts over SSH and ping the chosen
-      lab destinations across the routed fabric — a true end-to-end test from
-      host LAN to host LAN through multi-area OSPF. Demonstrates the remote
-      shell (exec-channel) paradigm on plain Linux devices.
-    definition:
-      graph:
-        nodes:
-          - id: start
-            name: Start
-            type: start
-            position_x: 0
-            position_y: 140
-          - id: reachable
-            name: Reachability probe (TCP/22)
-            type: step
-            kind: CHECK
-            phase: PREPARE
-            handler: probe.connectivity
-            position_x: 240
-            position_y: 140
-            target_selectors:
-              - type: role
-                role: probe_sources
-            params:
-              check_type: tcp_connect
-              port: 22
-              timeout_sec: 10
-              attempts: 2
-            policy:
-              timeout_sec: 60
-              retries: 0
-              on_failure: FAIL_RUN
-              evidence_required: false
-          - id: host_facts
-            name: Collect host facts
-            type: step
-            kind: ACTION
-            phase: PREPARE
-            handler: shell.execute
-            position_x: 660
-            position_y: 140
-            target_selectors:
-              - type: role
-                role: probe_sources
-            params:
-              shell: default
-              fail_fast: true
-              command_timeout_sec: 30
-              commands:
-                - uname -a
-                - ip -brief address
-                - ip route show
-            policy:
-              timeout_sec: 90
-              retries: 0
-              on_failure: FAIL_RUN
-              evidence_required: false
-          - id: ping_targets
-            name: Ping selected destinations
-            type: step
-            kind: ACTION
-            phase: VERIFY
-            handler: shell.execute
-            position_x: 1080
-            position_y: 140
-            target_selectors:
-              - type: role
-                role: probe_sources
-            params:
-              shell: sh
-              fail_fast: true
-              command_timeout_sec: 120
-              # shell.execute runs ONE command per line (multi-line scripts are
-              # split into separate exec channels at render time), so the ping
-              # sweep must stay a single line.
-              #
-              # The targets come from an editable CSV attachment, so they are
-              # scrubbed to the character set of an address/hostname before
-              # they are interpolated. That matters because the values land in
-              # the `for` word list: a `;` or `$(...)` surviving to that point
-              # would be shell *syntax*, not data, and no amount of quoting
-              # inside the loop body could rein it back in. The `case` guard
-              # then drops anything starting with `-`, which the character
-              # filter cannot catch and `ping` would read as an option.
-              commands:
-                - 'FAIL=0; for t in {{ inputs.ping_targets | join(" ") | regex_replace("[^0-9A-Za-z.:_ -]", "") }}; do case "$t" in -*) echo "skipping invalid target: $t"; FAIL=1; continue;; esac; echo "--- ping $t ---"; ping -c 3 -W 2 "$t" || FAIL=1; done; exit $FAIL'
-            policy:
-              timeout_sec: 180
-              retries: 0
-              on_failure: FAIL_RUN
-              evidence_required: false
-          - id: done
-            name: All destinations reachable
-            type: terminal
-            terminal_status: success
-            position_x: 1500
-            position_y: 60
-          - id: failed
-            name: Reachability failed
-            type: terminal
-            terminal_status: failure
-            position_x: 1500
-            position_y: 280
-        edges:
-          - id: e_start_reachable
-            source: start:start
-            target: reachable
-          - id: e_reachable_facts
-            source: reachable:success
-            target: host_facts
-          - id: e_reachable_failed
-            source: reachable:failure
-            target: failed
-          - id: e_facts_ping
-            source: host_facts:success
-            target: ping_targets
-          - id: e_facts_failed
-            source: host_facts:failure
-            target: failed
-          - id: e_ping_done
-            source: ping_targets:success
-            target: done
-          - id: e_ping_failed
-            source: ping_targets:failure
-            target: failed
-      interface_graph:
-        nodes:
-          - id: sec_sources
-            kind: section
-            position_x: 80
-            position_y: 80
-            width: 480
-            height: 200
-            data:
-              label: Probe sources
-              description: Linux endpoint hosts to run the test from.
-              runtime_layout: card
-              collapsible: false
-          - id: f_sources
-            kind: field
-            parent_id: sec_sources
-            position_x: 40
-            position_y: 60
-            data:
-              label: Endpoint hosts
-              field_id: sources
-              field_type: inventory.device
-              required: true
-              description: Lab endpoint hosts (role server) to probe from — preselected.
-              # Preselected default targets: the lab endpoint hosts ship already
-              # selected (portable device names resolved to ids on import).
-              default_value:
-                - dc1-srv-01
-                - dc2-srv-01
-                - br1-srv-01
-                - br2-srv-01
-              config:
-                role: probe_sources
-                multiple: true
-                option_source:
-                  kind: inventory.devices
-          - id: sec_destinations
-            kind: section
-            position_x: 620
-            position_y: 80
-            width: 520
-            height: 300
-            data:
-              label: Destinations
-              runtime_layout: card
-              collapsible: false
-          # The destination catalog lives in a CSV attachment on this flow
-          # (data/ping-destinations.csv) instead of a hard-coded list: edit the
-          # file on the Files tab and the options change — no flow edit needed.
-          - id: f_dest_area
-            kind: field
-            parent_id: sec_destinations
-            position_x: 40
-            position_y: 60
-            data:
-              label: Destination area
-              field_id: dest_area
-              field_type: core.enum
-              required: false
-              description: >-
-                Optional: narrow the destination list to one lab area. Options
-                are the distinct `area` values from the attached CSV.
-              config:
-                option_source:
-                  kind: attachment.csv
-                  config:
-                    filename: data/ping-destinations.csv
-                    value_column: area
-          - id: f_ping_targets
-            kind: field
-            parent_id: sec_destinations
-            position_x: 40
-            position_y: 140
-            data:
-              label: Ping destinations
-              field_id: ping_targets
-              field_type: core.multi_enum
-              required: true
-              default_value:
-                - "10.101.1.10"
-                - "10.104.1.10"
-              description: Lab addresses each source host must reach (from the attached CSV).
-              config:
-                multiple: true
-                option_source:
-                  kind: attachment.csv
-                  config:
-                    filename: data/ping-destinations.csv
-                    value_column: address
-                    label_column: name
-                    description_column: area
-        edges:
-          # Cascading select across two columns of the SAME CSV: the chosen
-          # area filters destination rows by their `area` column.
-          - id: e_area_targets
-            source: f_dest_area
-            target: f_ping_targets
-            relations:
-              - semantic_type: options_filter
-                value: area
-
-flow_attachments:
-  # Destination catalog for "Net: End-to-end reachability test": its launch
-  # form reads options straight from this CSV (attachment.csv option source),
-  # with the `area` column powering a cascading area → destination select.
-  - flow: "Net: End-to-end reachability test"
-    filename: data/ping-destinations.csv
-    content_file: src/files/lab/ping-destinations.csv

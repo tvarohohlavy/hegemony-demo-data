@@ -108,8 +108,10 @@ appears as part of a story rather than a feature checklist:
 Start by running **"Lab: Provision and tear down demo datacenter"** — it builds
 the lab images, deploys a multi-area OSPF topology of eleven routers and four
 Linux endpoint hosts (two lab datacenters with backbone ABRs plus two
-branches), attaches the lab network to the
-workers, and (optionally) stands up a local Gitea for config backups, then parks
+branches), deploys the lab bastion the workers tunnel through — SSH
+ProxyJump plus an authenticated SOCKS5 proxy, no host routing into the lab
+network (the lab runs inside the platform's dind sandbox daemon) — and
+(optionally) stands up a local Gitea for config backups, then parks
 on an approval gate **with no expiry**. While the run is held there the lab keeps
 running, so you can SSH to the routers and exercise the other flows against them;
 approving the gate tears the lab down (rejecting leaves it up). It doubles as an
@@ -206,10 +208,21 @@ Instance bootstrap is intentionally one-shot. To apply changed demo data, reset 
   `demo-inventory/` tree must therefore exist on the default branch of the
   repository the provider points at for the sync to succeed.
 - The `config-backups` git repository points at the demo Gitea over `http://`
-  on the Docker host so operators can browse pushed backups in Hegemony's
-  repository browser. This needs the repository's per-repo `allow_insecure_url`
-  opt-in (the demo bundle sets it) and only works after the lab bootstrap flow
-  has deployed Gitea.
+  at `dind:3000` — Gitea runs inside the platform's dind sandbox daemon and is
+  addressed by compose DNS — so operators can browse pushed backups in
+  Hegemony's repository browser. This needs the repository's per-repo
+  `allow_insecure_url` opt-in (the demo bundle sets it), a platform stack
+  running the `dind` overlay (the demo default), and only works after the lab
+  bootstrap flow has deployed Gitea. The operator's browser still reaches the
+  Gitea UI at `localhost:3000` via the dind service's port re-publish.
+- These bundles assume the platform runs `container.run` steps on the dind
+  sandbox daemon (the `dind` compose overlay + `HEGEMONY_CONTAINER_DOCKER_HOST`,
+  the demo default since the platform release that ships
+  `docs/development/design-dind-sandbox.md`). On an older host-socket platform
+  the `dind` hostname resolves nowhere and Gitea/lab addressing breaks — match
+  this repo's release to the platform release it targets (`install.sh`'s
+  `HEGEMONY_PLATFORM_REF` default records that pairing), the same
+  minimum-version discipline as the plugin wheels.
 - For reproducible installs, consume a tagged release of this repository (see
   [docs/release.md](docs/release.md)) instead of tracking `main`. Hegemony's
   CI pins a specific commit of this repository for its bundle contract check.
