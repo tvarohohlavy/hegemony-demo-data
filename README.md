@@ -219,10 +219,11 @@ Instance bootstrap is intentionally one-shot. To apply changed demo data, reset 
   sandbox daemon (the `dind` compose overlay + `HEGEMONY_CONTAINER_DOCKER_HOST`,
   the demo default since the platform release that ships
   `docs/development/design-dind-sandbox.md`). On an older host-socket platform
-  the `dind` hostname resolves nowhere and Gitea/lab addressing breaks — match
-  this repo's release to the platform release it targets (`install.sh`'s
-  `HEGEMONY_PLATFORM_REF` default records that pairing), the same
-  minimum-version discipline as the plugin wheels.
+  the `dind` hostname resolves nowhere and Gitea/lab addressing breaks.
+  `install.sh` installs the platform's newest release by default (override with
+  `--platform-ref` / `HEGEMONY_PLATFORM_REF`), so a fresh install lands on a
+  dind-capable platform automatically; the same minimum-version discipline as
+  the plugin wheels applies if you pin an older platform.
 - For reproducible installs, consume a tagged release of this repository (see
   [docs/release.md](docs/release.md)) instead of tracking `main`. Hegemony's
   CI pins a specific commit of this repository for its bundle contract check.
