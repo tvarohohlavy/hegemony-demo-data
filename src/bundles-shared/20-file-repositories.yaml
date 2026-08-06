@@ -5,8 +5,10 @@
 # A shared object-storage repository for golden artifacts — approved images,
 # baseline configs, signed firmware — published once by Meridian and readable
 # by every org through the shared read-through. It points at the demo MinIO
-# service (S3-compatible) that the demo stack already runs; tenants see it
-# flagged "Shared" and read-only in the file-repository browser.
+# service (S3-compatible) that the demo stack already runs; the bucket is
+# created by the stack's minio-init via HEGEMONY_S3_EXTRA_BUCKETS in the
+# platform's .env.demo. Tenants see it flagged "Shared" and read-only in the
+# file-repository browser.
 
 schema_version: 2
 
@@ -15,5 +17,5 @@ file_repositories:
     kind: s3
     endpoint_url: http://minio:9000
     bucket: meridian-golden
-    prefix: standards/
+    prefix: standards
     is_default: false

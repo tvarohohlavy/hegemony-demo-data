@@ -198,6 +198,9 @@ Still as **`meridian-noc`**, switch the org picker to **Shared Standards
 2. **Secrets** — a read-only `shared-monitoring-token` under
    `orgs/shared/secrets/…`.
 3. **File Repositories** — the shared **Golden Artifacts** object store.
+   Acting *inside* the shared org you can upload golden files into it;
+   tenants later see the repository flagged **Shared**, can browse and
+   download, and every write (upload, import, folder changes) is rejected.
 4. **Notifications** — a shared **Platform NOC Email** destination every
    tenant sees and can subscribe its own flows to.
 
