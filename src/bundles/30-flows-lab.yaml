@@ -565,9 +565,9 @@ flows:
             target: converge_check
           - source: converge_check:success
             target: hold
-          - # A failed subflow launch must not strand the run before the
-            # teardown gate — both outcomes proceed to the approval.
-            source: converge_check:failure
+          # A failed subflow launch must not strand the run before the
+          # teardown gate — both outcomes proceed to the approval.
+          - source: converge_check:failure
             target: hold
           - source: join:join_failed
             target: failed
