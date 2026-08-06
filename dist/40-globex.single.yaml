@@ -96,11 +96,9 @@ flows:
         position_x: 640
         position_y: 120
       edges:
-      - id: e_start_render
-        source: start:start
+      - source: start:start
         target: render
-      - id: e_render_done
-        source: render:success
+      - source: render:success
         target: done
     interface_graph:
       nodes:

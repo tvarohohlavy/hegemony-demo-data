@@ -169,44 +169,31 @@ flows:
             position_x: 2000
             position_y: 560
         edges:
-          - id: e_start_init
-            source: start:start
+          - source: start:start
             target: sv_init
-          - id: e_init_loop
-            source: sv_init:success
+          - source: sv_init:success
             target: conv_loop
-          - id: e_loop_collect
-            source: conv_loop:iterate
+          - source: conv_loop:iterate
             target: collect_state
-          - id: e_collect_assert
-            source: collect_state:success
+          - source: collect_state:success
             target: assert_full
-          - id: e_collect_retry
-            source: collect_state:failure
+          - source: collect_state:failure
             target: sv_retry
-          - id: e_assert_ok
-            source: assert_full:success
+          - source: assert_full:success
             target: sv_ok
-          - id: e_assert_retry
-            source: assert_full:failure
+          - source: assert_full:failure
             target: sv_retry
-          - id: e_ok_end
-            source: sv_ok:success
+          - source: sv_ok:success
             target: conv_loop_end
-          - id: e_retry_end
-            source: sv_retry:success
+          - source: sv_retry:success
             target: conv_loop_end
-          - id: e_loop_verdict
-            source: conv_loop:done
+          - source: conv_loop:done
             target: verdict
-          - id: e_loop_giveup
-            source: conv_loop:max_iterations
+          - source: conv_loop:max_iterations
             target: not_converged
-          - id: e_verdict_first
-            source: verdict:case:c_first
+          - source: verdict:case:c_first
             target: done_first
-          - id: e_verdict_retry
-            source: verdict:else
+          - source: verdict:else
             target: done_retry
       interface_graph:
         nodes:
@@ -383,42 +370,30 @@ flows:
             position_x: 2360
             position_y: 340
         edges:
-          - id: e_start_zero
-            source: start:start
+          - source: start:start
             target: sv_zero
-          - id: e_zero_loop
-            source: sv_zero:success
+          - source: sv_zero:success
             target: prefix_loop
-          - id: e_loop_check
-            source: prefix_loop:iterate
+          - source: prefix_loop:iterate
             target: check_route
-          - id: e_check_assert
-            source: check_route:success
+          - source: check_route:success
             target: route_ok
           # An unreachable router counts as a gap and the audit continues.
-          - id: e_check_gap
-            source: check_route:failure
+          - source: check_route:failure
             target: sv_gap
-          - id: e_assert_found
-            source: route_ok:success
+          - source: route_ok:success
             target: sv_found
-          - id: e_assert_gap
-            source: route_ok:failure
+          - source: route_ok:failure
             target: sv_gap
-          - id: e_found_end
-            source: sv_found:success
+          - source: sv_found:success
             target: prefix_loop_end
-          - id: e_gap_end
-            source: sv_gap:success
+          - source: sv_gap:success
             target: prefix_loop_end
-          - id: e_loop_verdict
-            source: prefix_loop:done
+          - source: prefix_loop:done
             target: audit_verdict
-          - id: e_verdict_clean
-            source: "audit_verdict:case:c_clean"
+          - source: "audit_verdict:case:c_clean"
             target: audit_done
-          - id: e_verdict_gaps
-            source: audit_verdict:else
+          - source: audit_verdict:else
             target: audit_gaps
       interface_graph:
         nodes:

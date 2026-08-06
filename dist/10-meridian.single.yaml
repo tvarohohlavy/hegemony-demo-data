@@ -799,75 +799,52 @@ flows:
         position_x: 2780
         position_y: 560
       edges:
-      - id: e_start_build
-        source: start:start
+      - source: start:start
         target: build_image
-      - id: e_build_fork
-        source: build_image:success
+      - source: build_image:success
         target: fork
-      - id: e_build_failed
-        source: build_image:failure
+      - source: build_image:failure
         target: failed
-      - id: e_fork_lab
-        source: fork:fork
+      - source: fork:fork
         target: deploy_lab
-      - id: e_fork_gitea
-        source: fork:fork
+      - source: fork:fork
         target: deploy_gitea
-      - id: e_lab_bastion
-        source: deploy_lab:success
+      - source: deploy_lab:success
         target: deploy_bastion
-      - id: e_lab_join_fail
-        source: deploy_lab:failure
+      - source: deploy_lab:failure
         target: join
-      - id: e_bastion_wait
-        source: deploy_bastion:success
+      - source: deploy_bastion:success
         target: wait_ready
-      - id: e_bastion_join_fail
-        source: deploy_bastion:failure
+      - source: deploy_bastion:failure
         target: join
-      - id: e_wait_join
-        source: wait_ready:success
+      - source: wait_ready:success
         target: join
-      - id: e_wait_join_fail
-        source: wait_ready:failure
+      - source: wait_ready:failure
         target: join
-      - id: e_gitea_join
-        source: deploy_gitea:success
+      - source: deploy_gitea:success
         target: join
-      - id: e_gitea_join_fail
-        source: deploy_gitea:failure
+      - source: deploy_gitea:failure
         target: join
-      - id: e_fork_monitor
-        source: fork:fork
+      - source: fork:fork
         target: monitor_lab
-      - id: e_monitor_join_term
-        source: monitor_lab
+      - source: monitor_lab
         target: join
         type: termination
-      - id: e_join_converge
-        source: join:joined
+      - source: join:joined
         target: converge_check
-      - id: e_converge_hold
-        source: converge_check:success
+      - source: converge_check:success
         target: hold
-      - id: e_converge_hold_fail
-        source: converge_check:failure
+      - source: converge_check:failure
         target: hold
-      - id: e_join_failed
-        source: join:join_failed
+      - source: join:join_failed
         target: failed
-      - id: e_hold_teardown
-        source: hold:approved
+      - source: hold:approved
         target: teardown
-      - id: e_hold_left
-        source: hold:rejected
+      - source: hold:rejected
         target: left_running
-      - id: e_teardown_done
-        source: teardown:success
+      - source: teardown:success
         target: done
-      - id: e_teardown_failed
-        source: teardown:failure
+      - source: teardown:failure
         target: failed
     interface_graph:
       nodes:
@@ -1002,20 +979,15 @@ flows:
         position_x: 1080
         position_y: 260
       edges:
-      - id: e_start_collect
-        source: start:start
+      - source: start:start
         target: collect_configs
-      - id: e_collect_package
-        source: collect_configs:success
+      - source: collect_configs:success
         target: package_push
-      - id: e_collect_failed
-        source: collect_configs:failure
+      - source: collect_configs:failure
         target: failed
-      - id: e_package_done
-        source: package_push:success
+      - source: package_push:success
         target: done
-      - id: e_package_failed
-        source: package_push:failure
+      - source: package_push:failure
         target: failed
     outputs:
       git_result:
@@ -1238,41 +1210,29 @@ flows:
         position_x: 1400
         position_y: 440
       edges:
-      - id: e_start_approval
-        source: start:start
+      - source: start:start
         target: approval
-      - id: e_approval_precheck
-        source: approval:approved
+      - source: approval:approved
         target: precheck
-      - id: e_approval_rejected
-        source: approval:rejected
+      - source: approval:rejected
         target: failed
-      - id: e_approval_expired
-        source: approval:expired
+      - source: approval:expired
         target: failed
-      - id: e_precheck_apply
-        source: precheck:success
+      - source: precheck:success
         target: apply
-      - id: e_precheck_failed
-        source: precheck:failure
+      - source: precheck:failure
         target: failed
-      - id: e_apply_postcheck
-        source: apply:success
+      - source: apply:success
         target: postcheck
-      - id: e_apply_failed
-        source: apply:failure
+      - source: apply:failure
         target: failed
-      - id: e_postcheck_compare
-        source: postcheck:success
+      - source: postcheck:success
         target: compare
-      - id: e_postcheck_failed
-        source: postcheck:failure
+      - source: postcheck:failure
         target: failed
-      - id: e_compare_done
-        source: compare:success
+      - source: compare:success
         target: done
-      - id: e_compare_failed
-        source: compare:failure
+      - source: compare:failure
         target: failed
     interface_graph:
       nodes:
@@ -1576,26 +1536,19 @@ flows:
         position_x: 1500
         position_y: 280
       edges:
-      - id: e_start_reachable
-        source: start:start
+      - source: start:start
         target: reachable
-      - id: e_reachable_neighbors
-        source: reachable:success
+      - source: reachable:success
         target: neighbors
-      - id: e_reachable_failed
-        source: reachable:failure
+      - source: reachable:failure
         target: failed
-      - id: e_neighbors_assert
-        source: neighbors:success
+      - source: neighbors:success
         target: assert_full
-      - id: e_neighbors_failed
-        source: neighbors:failure
+      - source: neighbors:failure
         target: failed
-      - id: e_assert_done
-        source: assert_full:success
+      - source: assert_full:success
         target: done
-      - id: e_assert_failed
-        source: assert_full:failure
+      - source: assert_full:failure
         target: failed
     interface_graph:
       nodes:
@@ -1794,44 +1747,31 @@ flows:
         position_x: 2000
         position_y: 560
       edges:
-      - id: e_start_init
-        source: start:start
+      - source: start:start
         target: sv_init
-      - id: e_init_loop
-        source: sv_init:success
+      - source: sv_init:success
         target: conv_loop
-      - id: e_loop_collect
-        source: conv_loop:iterate
+      - source: conv_loop:iterate
         target: collect_state
-      - id: e_collect_assert
-        source: collect_state:success
+      - source: collect_state:success
         target: assert_full
-      - id: e_collect_retry
-        source: collect_state:failure
+      - source: collect_state:failure
         target: sv_retry
-      - id: e_assert_ok
-        source: assert_full:success
+      - source: assert_full:success
         target: sv_ok
-      - id: e_assert_retry
-        source: assert_full:failure
+      - source: assert_full:failure
         target: sv_retry
-      - id: e_ok_end
-        source: sv_ok:success
+      - source: sv_ok:success
         target: conv_loop_end
-      - id: e_retry_end
-        source: sv_retry:success
+      - source: sv_retry:success
         target: conv_loop_end
-      - id: e_loop_verdict
-        source: conv_loop:done
+      - source: conv_loop:done
         target: verdict
-      - id: e_loop_giveup
-        source: conv_loop:max_iterations
+      - source: conv_loop:max_iterations
         target: not_converged
-      - id: e_verdict_first
-        source: verdict:case:c_first
+      - source: verdict:case:c_first
         target: done_first
-      - id: e_verdict_retry
-        source: verdict:else
+      - source: verdict:else
         target: done_retry
     interface_graph:
       nodes:
@@ -1994,41 +1934,29 @@ flows:
         position_x: 2360
         position_y: 340
       edges:
-      - id: e_start_zero
-        source: start:start
+      - source: start:start
         target: sv_zero
-      - id: e_zero_loop
-        source: sv_zero:success
+      - source: sv_zero:success
         target: prefix_loop
-      - id: e_loop_check
-        source: prefix_loop:iterate
+      - source: prefix_loop:iterate
         target: check_route
-      - id: e_check_assert
-        source: check_route:success
+      - source: check_route:success
         target: route_ok
-      - id: e_check_gap
-        source: check_route:failure
+      - source: check_route:failure
         target: sv_gap
-      - id: e_assert_found
-        source: route_ok:success
+      - source: route_ok:success
         target: sv_found
-      - id: e_assert_gap
-        source: route_ok:failure
+      - source: route_ok:failure
         target: sv_gap
-      - id: e_found_end
-        source: sv_found:success
+      - source: sv_found:success
         target: prefix_loop_end
-      - id: e_gap_end
-        source: sv_gap:success
+      - source: sv_gap:success
         target: prefix_loop_end
-      - id: e_loop_verdict
-        source: prefix_loop:done
+      - source: prefix_loop:done
         target: audit_verdict
-      - id: e_verdict_clean
-        source: audit_verdict:case:c_clean
+      - source: audit_verdict:case:c_clean
         target: audit_done
-      - id: e_verdict_gaps
-        source: audit_verdict:else
+      - source: audit_verdict:else
         target: audit_gaps
     interface_graph:
       nodes:
@@ -2238,38 +2166,27 @@ flows:
         position_x: 2000
         position_y: 480
       edges:
-      - id: e_start_init
-        source: start:start
+      - source: start:start
         target: sv_init
-      - id: e_init_rollout
-        source: sv_init:success
+      - source: sv_init:success
         target: rollout
-      - id: e_rollout_mark
-        source: rollout:iterate
+      - source: rollout:iterate
         target: sv_mark
-      - id: e_mark_apply
-        source: sv_mark:success
+      - source: sv_mark:success
         target: apply_baseline
-      - id: e_apply_ok
-        source: apply_baseline:success
+      - source: apply_baseline:success
         target: sv_ok
-      - id: e_ok_end
-        source: sv_ok:success
+      - source: sv_ok:success
         target: rollout_end
-      - id: e_apply_halt
-        source: apply_baseline:failure
+      - source: apply_baseline:failure
         target: halted
-      - id: e_rollout_report
-        source: rollout:done
+      - source: rollout:done
         target: report
-      - id: e_rollout_max
-        source: rollout:max_iterations
+      - source: rollout:max_iterations
         target: halted
-      - id: e_report_ok
-        source: report:success
+      - source: report:success
         target: ok
-      - id: e_report_failed
-        source: report:failure
+      - source: report:failure
         target: halted
     interface_graph:
       nodes:
@@ -2521,65 +2438,45 @@ flows:
         position_x: 1700
         position_y: 600
       edges:
-      - id: e_start_plan
-        source: start:start
+      - source: start:start
         target: plan
-      - id: e_plan_route
-        source: plan:success
+      - source: plan:success
         target: route
-      - id: e_plan_failed
-        source: plan:failure
+      - source: plan:failure
         target: failed
-      - id: e_route_plan_only
-        source: route:case:c_plan
+      - source: route:case:c_plan
         target: plan_done
-      - id: e_route_apply
-        source: route:case:c_apply
+      - source: route:case:c_apply
         target: gate
-      - id: e_route_else
-        source: route:else
+      - source: route:else
         target: failed
-      - id: e_route_error
-        source: route:error
+      - source: route:error
         target: failed
-      - id: e_gate_apply
-        source: gate:approved
+      - source: gate:approved
         target: apply
-      - id: e_gate_rejected
-        source: gate:rejected
+      - source: gate:rejected
         target: failed
-      - id: e_gate_expired
-        source: gate:expired
+      - source: gate:expired
         target: failed
-      - id: e_apply_verify
-        source: apply:success
+      - source: apply:success
         target: tf_verify
-      - id: e_apply_failed
-        source: apply:failure
+      - source: apply:failure
         target: failed
-      - id: e_verify_push
-        source: tf_verify:success
+      - source: tf_verify:success
         target: push
-      - id: e_verify_failed
-        source: tf_verify:failure
+      - source: tf_verify:failure
         target: failed
-      - id: e_push_postcheck
-        source: push:success
+      - source: push:success
         target: postcheck
-      - id: e_push_failed
-        source: push:failure
+      - source: push:failure
         target: failed
-      - id: e_postcheck_confirm
-        source: postcheck:success
+      - source: postcheck:success
         target: confirm
-      - id: e_postcheck_failed
-        source: postcheck:failure
+      - source: postcheck:failure
         target: failed
-      - id: e_confirm_done
-        source: confirm:success
+      - source: confirm:success
         target: done
-      - id: e_confirm_failed
-        source: confirm:failure
+      - source: confirm:failure
         target: failed
     interface_graph:
       nodes:

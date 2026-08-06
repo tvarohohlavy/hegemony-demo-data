@@ -526,81 +526,58 @@ flows:
             position_x: 2780
             position_y: 560
         edges:
-          - id: e_start_build
-            source: start:start
+          - source: start:start
             target: build_image
-          - id: e_build_fork
-            source: build_image:success
+          - source: build_image:success
             target: fork
-          - id: e_build_failed
-            source: build_image:failure
+          - source: build_image:failure
             target: failed
-          - id: e_fork_lab
-            source: fork:fork
+          - source: fork:fork
             target: deploy_lab
-          - id: e_fork_gitea
-            source: fork:fork
+          - source: fork:fork
             target: deploy_gitea
-          - id: e_lab_bastion
-            source: deploy_lab:success
+          - source: deploy_lab:success
             target: deploy_bastion
-          - id: e_lab_join_fail
-            source: deploy_lab:failure
+          - source: deploy_lab:failure
             target: join
-          - id: e_bastion_wait
-            source: deploy_bastion:success
+          - source: deploy_bastion:success
             target: wait_ready
-          - id: e_bastion_join_fail
-            source: deploy_bastion:failure
+          - source: deploy_bastion:failure
             target: join
-          - id: e_wait_join
-            source: wait_ready:success
+          - source: wait_ready:success
             target: join
-          - id: e_wait_join_fail
-            source: wait_ready:failure
+          - source: wait_ready:failure
             target: join
-          - id: e_gitea_join
-            source: deploy_gitea:success
+          - source: deploy_gitea:success
             target: join
-          - id: e_gitea_join_fail
-            source: deploy_gitea:failure
+          - source: deploy_gitea:failure
             target: join
           # Start the reachability monitor in parallel with the deploy branches.
-          - id: e_fork_monitor
-            source: fork:fork
+          - source: fork:fork
             target: monitor_lab
           # Termination edge (not execution): when the deploy join fires, stop
           # the monitor. It is deliberately NOT an execution input to the join,
           # so the join's awaited-branch count stays the two deploy branches.
-          - id: e_monitor_join_term
-            source: monitor_lab
+          - source: monitor_lab
             target: join
             type: termination
-          - id: e_join_converge
-            source: join:joined
+          - source: join:joined
             target: converge_check
-          - id: e_converge_hold
-            source: converge_check:success
+          - source: converge_check:success
             target: hold
-          - id: e_converge_hold_fail
-            # A failed subflow launch must not strand the run before the
-            # teardown gate — both outcomes proceed to the approval.
-            source: converge_check:failure
+          # A failed subflow launch must not strand the run before the
+          # teardown gate — both outcomes proceed to the approval.
+          - source: converge_check:failure
             target: hold
-          - id: e_join_failed
-            source: join:join_failed
+          - source: join:join_failed
             target: failed
-          - id: e_hold_teardown
-            source: hold:approved
+          - source: hold:approved
             target: teardown
-          - id: e_hold_left
-            source: hold:rejected
+          - source: hold:rejected
             target: left_running
-          - id: e_teardown_done
-            source: teardown:success
+          - source: teardown:success
             target: done
-          - id: e_teardown_failed
-            source: teardown:failure
+          - source: teardown:failure
             target: failed
       interface_graph:
         nodes:

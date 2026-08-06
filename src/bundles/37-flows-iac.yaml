@@ -183,39 +183,28 @@ flows:
             position_x: 2000
             position_y: 480
         edges:
-          - id: e_start_init
-            source: start:start
+          - source: start:start
             target: sv_init
-          - id: e_init_rollout
-            source: sv_init:success
+          - source: sv_init:success
             target: rollout
-          - id: e_rollout_mark
-            source: rollout:iterate
+          - source: rollout:iterate
             target: sv_mark
-          - id: e_mark_apply
-            source: sv_mark:success
+          - source: sv_mark:success
             target: apply_baseline
-          - id: e_apply_ok
-            source: apply_baseline:success
+          - source: apply_baseline:success
             target: sv_ok
-          - id: e_ok_end
-            source: sv_ok:success
+          - source: sv_ok:success
             target: rollout_end
           # The canary break: a failing host exits the loop and halts the run.
-          - id: e_apply_halt
-            source: apply_baseline:failure
+          - source: apply_baseline:failure
             target: halted
-          - id: e_rollout_report
-            source: rollout:done
+          - source: rollout:done
             target: report
-          - id: e_rollout_max
-            source: rollout:max_iterations
+          - source: rollout:max_iterations
             target: halted
-          - id: e_report_ok
-            source: report:success
+          - source: report:success
             target: ok
-          - id: e_report_failed
-            source: report:failure
+          - source: report:failure
             target: halted
       interface_graph:
         nodes:
@@ -496,65 +485,45 @@ flows:
             position_x: 1700
             position_y: 600
         edges:
-          - id: e_start_plan
-            source: start:start
+          - source: start:start
             target: plan
-          - id: e_plan_route
-            source: plan:success
+          - source: plan:success
             target: route
-          - id: e_plan_failed
-            source: plan:failure
+          - source: plan:failure
             target: failed
-          - id: e_route_plan_only
-            source: "route:case:c_plan"
+          - source: "route:case:c_plan"
             target: plan_done
-          - id: e_route_apply
-            source: "route:case:c_apply"
+          - source: "route:case:c_apply"
             target: gate
-          - id: e_route_else
-            source: route:else
+          - source: route:else
             target: failed
-          - id: e_route_error
-            source: route:error
+          - source: route:error
             target: failed
-          - id: e_gate_apply
-            source: gate:approved
+          - source: gate:approved
             target: apply
-          - id: e_gate_rejected
-            source: gate:rejected
+          - source: gate:rejected
             target: failed
-          - id: e_gate_expired
-            source: gate:expired
+          - source: gate:expired
             target: failed
-          - id: e_apply_verify
-            source: apply:success
+          - source: apply:success
             target: tf_verify
-          - id: e_apply_failed
-            source: apply:failure
+          - source: apply:failure
             target: failed
-          - id: e_verify_push
-            source: tf_verify:success
+          - source: tf_verify:success
             target: push
-          - id: e_verify_failed
-            source: tf_verify:failure
+          - source: tf_verify:failure
             target: failed
-          - id: e_push_postcheck
-            source: push:success
+          - source: push:success
             target: postcheck
-          - id: e_push_failed
-            source: push:failure
+          - source: push:failure
             target: failed
-          - id: e_postcheck_confirm
-            source: postcheck:success
+          - source: postcheck:success
             target: confirm
-          - id: e_postcheck_failed
-            source: postcheck:failure
+          - source: postcheck:failure
             target: failed
-          - id: e_confirm_done
-            source: confirm:success
+          - source: confirm:success
             target: done
-          - id: e_confirm_failed
-            source: confirm:failure
+          - source: confirm:failure
             target: failed
       interface_graph:
         nodes:
