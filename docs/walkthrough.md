@@ -197,10 +197,14 @@ Still as **`meridian-noc`**, switch the org picker to **Shared Standards
    and `APPROVED_CONTAINER_IMAGES`. Edit `NTP_PRIMARY` to a new address.
 2. **Secrets** — a read-only `shared-monitoring-token` under
    `orgs/shared/secrets/…`.
-3. **File Repositories** — the shared **Golden Artifacts** object store.
-   Acting *inside* the shared org you can upload golden files into it;
-   tenants later see the repository flagged **Shared**, can browse and
-   download, and every write (upload, import, folder changes) is rejected.
+3. **File Repositories** — the shared **Golden Artifacts** object store,
+   pre-seeded with golden files (a device baseline, the NTP/DNS fragment,
+   and a demo firmware image in the `golden` folder — the objects land in
+   the bucket via minio-init's seed mount and the catalog rows via this
+   bundle, so browser and bucket agree). Acting *inside* the shared org you
+   can upload more golden files; tenants later see the repository flagged
+   **Shared**, can browse and download, and every write (upload, import,
+   folder changes) is rejected.
 4. **Notifications** — a shared **Platform NOC Email** destination every
    tenant sees and can subscribe its own flows to.
 
