@@ -592,15 +592,19 @@ def main() -> int:
         configs = _selected_configs(args.bundle)
         # Merge every manifest bundle (not just the selected ones) so the
         # shared reference universe is complete even when validating a single
-        # bundle that references shared variables/secrets. merge_fragments
-        # also returns the seed-object copies, which validation ignores.
-        merged_all = {config.id: merge_fragments(config)[0] for config in load_manifest()}
+        # bundle that references shared variables/secrets. Seed resolution is
+        # skipped — validation never inspects seed artifacts, so there is no
+        # reason to read and hash their payloads here.
+        merged_all = {
+            config.id: merge_fragments(config, resolve_seeds=False)[0]
+            for config in load_manifest()
+        }
         shared_slug, shared_vars, shared_secrets = _shared_reference_universe(merged_all)
         org_vars, org_secrets = _same_org_universe(merged_all)
 
         errors: list[str] = []
         for config in configs:
-            merged = merged_all.get(config.id) or merge_fragments(config)[0]
+            merged = merged_all.get(config.id) or merge_fragments(config, resolve_seeds=False)[0]
             # The shared bundle validates against only its own resources — it
             # cannot read other orgs.
             is_shared_bundle = merged.get("organization") == shared_slug

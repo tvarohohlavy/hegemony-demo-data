@@ -132,7 +132,16 @@ def load_fragment(path: Path) -> dict[str, Any]:
     return raw
 
 
-def merge_fragments(config: BundleConfig) -> dict[str, Any]:
+def merge_fragments(
+    config: BundleConfig, *, resolve_seeds: bool = True
+) -> tuple[dict[str, Any], list[SeedObject]]:
+    """Merge a bundle's fragments; returns ``(merged, seed_objects)``.
+
+    ``resolve_seeds=False`` skips seed-file resolution (reading and hashing
+    the artifact payloads) for callers that only inspect the merged sections,
+    such as validation — the returned seed list is then empty and ``files``
+    entries keep their raw ``seed_file`` references.
+    """
     files = sorted({*config.source_dir.glob("*.yaml"), *config.source_dir.glob("*.yml")})
     if not files:
         raise FileNotFoundError(f"No YAML fragments found in {config.source_dir}")
@@ -181,7 +190,7 @@ def merge_fragments(config: BundleConfig) -> dict[str, Any]:
     for key in sorted(sections):
         merged[key] = sections[key]
     _resolve_content_files(merged)
-    seeds = _resolve_seed_files(merged)
+    seeds = _resolve_seed_files(merged) if resolve_seeds else []
     return merged, seeds
 
 
@@ -243,6 +252,11 @@ def _resolve_seed_files(merged: dict[str, Any]) -> list[SeedObject]:
         bucket = repository.get("bucket")
         if not isinstance(bucket, str) or not bucket.strip():
             raise ValueError(f"{label} needs a bucket to seed files into")
+        bucket = bucket.strip()
+        # Both values become path components under dist/seed-s3; reject
+        # separators and dot segments so no entry can escape the seed tree.
+        if "/" in bucket or "\\" in bucket or bucket in {".", ".."}:
+            raise ValueError(f"{label} bucket must be a plain bucket name")
         for entry_index, entry in enumerate(entries):
             entry_label = f"{label}.files[{entry_index}]"
             if not isinstance(entry, dict) or "seed_file" not in entry:
@@ -257,13 +271,15 @@ def _resolve_seed_files(merged: dict[str, Any]) -> list[SeedObject]:
             if not isinstance(object_key, str) or not object_key.strip():
                 raise ValueError(f"{entry_label} must set object_key")
             object_key = object_key.strip()
-            if object_key.startswith("/") or ".." in object_key.split("/"):
+            if "\\" in object_key or any(
+                part in {"", ".", ".."} for part in object_key.split("/")
+            ):
                 raise ValueError(f"{entry_label} object_key must be a safe relative key")
             payload = source.read_bytes()
             entry["filename"] = source.name
             entry["sha256"] = hashlib.sha256(payload).hexdigest()
             entry["size_bytes"] = len(payload)
-            seed = SeedObject(source=source, bucket=bucket.strip(), object_key=object_key)
+            seed = SeedObject(source=source, bucket=bucket, object_key=object_key)
             if seed.dest in seen_dests:
                 raise ValueError(f"{entry_label} duplicates seed object {object_key!r}")
             seen_dests.add(seed.dest)
@@ -308,9 +324,11 @@ def main() -> int:
             return 2
 
     failed = False
+    expected_seed_dests: set[Path] = set()
     for config in configs:
         merged, seeds = merge_fragments(config)
         rendered = render_bundle(merged, config)
+        expected_seed_dests.update(seed.dest for seed in seeds)
         if not args.check:
             config.output.parent.mkdir(parents=True, exist_ok=True)
             config.output.write_text(rendered, encoding="utf-8")
@@ -329,6 +347,30 @@ def main() -> int:
             if not seed.dest.is_file() or seed.dest.read_bytes() != seed.source.read_bytes():
                 print(f"{seed.dest} is not up to date; run scripts/build.py", file=sys.stderr)
                 failed = True
+
+    # A removed or renamed catalog entry must not leave a stale object behind —
+    # minio-init would still seed it, breaking the bucket-and-catalog-agree
+    # guarantee. Full runs prune (or, in check mode, flag) strays; partial
+    # --bundle runs skip this because they cannot see other bundles' seeds.
+    if args.bundle is None and SEED_S3_DIR.exists():
+        stray_files = sorted(
+            path
+            for path in SEED_S3_DIR.rglob("*")
+            if path.is_file() and path not in expected_seed_dests
+        )
+        if args.check:
+            for path in stray_files:
+                print(f"{path} is stale (no seed entry); run scripts/build.py", file=sys.stderr)
+                failed = True
+        else:
+            for path in stray_files:
+                path.unlink()
+                print(f"removed stale {path.relative_to(ROOT)}")
+            for directory in sorted(
+                (path for path in SEED_S3_DIR.rglob("*") if path.is_dir()), reverse=True
+            ):
+                if not any(directory.iterdir()):
+                    directory.rmdir()
     return 1 if failed else 0
 
 
