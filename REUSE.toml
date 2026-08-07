@@ -30,3 +30,11 @@ path = "src/files/lab/*.csv"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2025-2026 Jakub Travnik <jakub.travnik@gmail.com>"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# Binary demo artifact seeded into the Golden Artifacts bucket (plus its
+# copy under dist/seed-s3); binaries cannot carry SPDX comment headers.
+[[annotations]]
+path = ["src/files/standards/golden/*.bin", "dist/seed-s3/**"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2025-2026 Jakub Travnik <jakub.travnik@gmail.com>"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

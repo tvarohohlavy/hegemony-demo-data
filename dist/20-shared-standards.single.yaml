@@ -37,6 +37,25 @@ file_repositories:
   bucket: meridian-golden
   prefix: standards
   is_default: false
+  files:
+  - object_key: standards/golden/baseline-config.txt
+    folder_path: golden
+    content_type: text/plain
+    filename: baseline-config.txt
+    sha256: ee5afa6f4b2742e144437b2d169aa8c490d1872fabb408eec003779c16828d61
+    size_bytes: 624
+  - object_key: standards/golden/ntp-dns-baseline.cfg
+    folder_path: golden
+    content_type: text/plain
+    filename: ntp-dns-baseline.cfg
+    sha256: 38fdc78285395bd11bc074939e5151d569dacf296b80a12cf92d93da73da47ad
+    size_bytes: 373
+  - object_key: standards/golden/cat9k-demo-17.9.4.bin
+    folder_path: golden
+    content_type: application/octet-stream
+    filename: cat9k-demo-17.9.4.bin
+    sha256: df970261cc4e7706e60074999cf19064c18696eea03aa3c3abcbee2c395f186b
+    size_bytes: 2103
 notification_destinations:
 - name: 'Shared: Platform NOC Email'
   type: email

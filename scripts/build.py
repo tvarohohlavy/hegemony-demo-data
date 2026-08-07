@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,6 +21,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / "manifest.yaml"
+SEED_S3_DIR = ROOT / "dist" / "seed-s3"
 
 RESOURCE_ORDER = [
     "secrets",
@@ -53,6 +56,19 @@ class BundleConfig:
     id: str
     source_dir: Path
     output: Path
+
+
+@dataclass(frozen=True)
+class SeedObject:
+    """One artifact copied into the bucket seed tree (dist/seed-s3)."""
+
+    source: Path
+    bucket: str
+    object_key: str
+
+    @property
+    def dest(self) -> Path:
+        return SEED_S3_DIR / self.bucket / self.object_key
 
 
 def _repo_path(value: str, *, field_name: str) -> Path:
@@ -116,7 +132,16 @@ def load_fragment(path: Path) -> dict[str, Any]:
     return raw
 
 
-def merge_fragments(config: BundleConfig) -> dict[str, Any]:
+def merge_fragments(
+    config: BundleConfig, *, resolve_seeds: bool = True
+) -> tuple[dict[str, Any], list[SeedObject]]:
+    """Merge a bundle's fragments; returns ``(merged, seed_objects)``.
+
+    ``resolve_seeds=False`` skips seed-file resolution (reading and hashing
+    the artifact payloads) for callers that only inspect the merged sections,
+    such as validation — the returned seed list is then empty and ``files``
+    entries keep their raw ``seed_file`` references.
+    """
     files = sorted({*config.source_dir.glob("*.yaml"), *config.source_dir.glob("*.yml")})
     if not files:
         raise FileNotFoundError(f"No YAML fragments found in {config.source_dir}")
@@ -165,7 +190,8 @@ def merge_fragments(config: BundleConfig) -> dict[str, Any]:
     for key in sorted(sections):
         merged[key] = sections[key]
     _resolve_content_files(merged)
-    return merged
+    seeds = _resolve_seed_files(merged) if resolve_seeds else []
+    return merged, seeds
 
 
 def _resolve_content_files(merged: dict[str, Any]) -> None:
@@ -197,6 +223,68 @@ def _resolve_content_files(merged: dict[str, Any]) -> None:
         if not path.is_file():
             raise FileNotFoundError(f"flow_attachments[{index}] content_file not found: {ref}")
         item["content"] = path.read_text(encoding="utf-8")
+
+
+def _resolve_seed_files(merged: dict[str, Any]) -> list[SeedObject]:
+    """Resolve ``file_repositories[*].files[*].seed_file`` source references.
+
+    Golden artifacts live as real files under the repository; a catalog entry
+    names its source via ``seed_file`` and its bucket location via
+    ``object_key``. The build computes ``filename``/``sha256``/``size_bytes``
+    from the source (so the bundle's StoredFile metadata and the seeded object
+    can never disagree) and returns the copies for ``dist/seed-s3/<bucket>/``,
+    which the platform's demo overlay mounts into minio-init at /seed.
+    """
+    repositories = merged.get("file_repositories")
+    if not isinstance(repositories, list):
+        return []
+    seeds: list[SeedObject] = []
+    seen_dests: set[Path] = set()
+    for repo_index, repository in enumerate(repositories):
+        if not isinstance(repository, dict):
+            continue
+        entries = repository.get("files")
+        if entries is None:
+            continue
+        label = f"file_repositories[{repo_index}]"
+        if not isinstance(entries, list):
+            raise ValueError(f"{label}.files must be a list")
+        bucket = repository.get("bucket")
+        if not isinstance(bucket, str) or not bucket.strip():
+            raise ValueError(f"{label} needs a bucket to seed files into")
+        bucket = bucket.strip()
+        # Both values become path components under dist/seed-s3; reject
+        # separators and dot segments so no entry can escape the seed tree.
+        if "/" in bucket or "\\" in bucket or bucket in {".", ".."}:
+            raise ValueError(f"{label} bucket must be a plain bucket name")
+        for entry_index, entry in enumerate(entries):
+            entry_label = f"{label}.files[{entry_index}]"
+            if not isinstance(entry, dict) or "seed_file" not in entry:
+                raise ValueError(f"{entry_label} must set seed_file")
+            ref = entry.pop("seed_file")
+            if not isinstance(ref, str) or not ref.strip():
+                raise ValueError(f"{entry_label} seed_file must be a non-empty path")
+            source = _repo_path(ref, field_name=f"{entry_label} seed_file")
+            if not source.is_file():
+                raise FileNotFoundError(f"{entry_label} seed_file not found: {ref}")
+            object_key = entry.get("object_key")
+            if not isinstance(object_key, str) or not object_key.strip():
+                raise ValueError(f"{entry_label} must set object_key")
+            object_key = object_key.strip()
+            if "\\" in object_key or any(
+                part in {"", ".", ".."} for part in object_key.split("/")
+            ):
+                raise ValueError(f"{entry_label} object_key must be a safe relative key")
+            payload = source.read_bytes()
+            entry["filename"] = source.name
+            entry["sha256"] = hashlib.sha256(payload).hexdigest()
+            entry["size_bytes"] = len(payload)
+            seed = SeedObject(source=source, bucket=bucket, object_key=object_key)
+            if seed.dest in seen_dests:
+                raise ValueError(f"{entry_label} duplicates seed object {object_key!r}")
+            seen_dests.add(seed.dest)
+            seeds.append(seed)
+    return seeds
 
 
 def render_bundle(bundle: dict[str, Any], config: BundleConfig) -> str:
@@ -236,18 +324,53 @@ def main() -> int:
             return 2
 
     failed = False
+    expected_seed_dests: set[Path] = set()
     for config in configs:
-        rendered = render_bundle(merge_fragments(config), config)
+        merged, seeds = merge_fragments(config)
+        rendered = render_bundle(merged, config)
+        expected_seed_dests.update(seed.dest for seed in seeds)
         if not args.check:
             config.output.parent.mkdir(parents=True, exist_ok=True)
             config.output.write_text(rendered, encoding="utf-8")
             print(f"wrote {config.output.relative_to(ROOT)}")
+            for seed in seeds:
+                seed.dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(seed.source, seed.dest)
+                print(f"wrote {seed.dest.relative_to(ROOT)}")
             continue
 
         current = config.output.read_text(encoding="utf-8") if config.output.exists() else ""
         if current != rendered:
             print(f"{config.output} is not up to date; run scripts/build.py", file=sys.stderr)
             failed = True
+        for seed in seeds:
+            if not seed.dest.is_file() or seed.dest.read_bytes() != seed.source.read_bytes():
+                print(f"{seed.dest} is not up to date; run scripts/build.py", file=sys.stderr)
+                failed = True
+
+    # A removed or renamed catalog entry must not leave a stale object behind —
+    # minio-init would still seed it, breaking the bucket-and-catalog-agree
+    # guarantee. Full runs prune (or, in check mode, flag) strays; partial
+    # --bundle runs skip this because they cannot see other bundles' seeds.
+    if args.bundle is None and SEED_S3_DIR.exists():
+        stray_files = sorted(
+            path
+            for path in SEED_S3_DIR.rglob("*")
+            if path.is_file() and path not in expected_seed_dests
+        )
+        if args.check:
+            for path in stray_files:
+                print(f"{path} is stale (no seed entry); run scripts/build.py", file=sys.stderr)
+                failed = True
+        else:
+            for path in stray_files:
+                path.unlink()
+                print(f"removed stale {path.relative_to(ROOT)}")
+            for directory in sorted(
+                (path for path in SEED_S3_DIR.rglob("*") if path.is_dir()), reverse=True
+            ):
+                if not any(directory.iterdir()):
+                    directory.rmdir()
     return 1 if failed else 0
 
 

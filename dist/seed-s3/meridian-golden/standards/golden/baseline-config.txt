@@ -1,0 +1,21 @@
+! SPDX-FileCopyrightText: 2025-2026 Jakub Travnik <jakub.travnik@gmail.com>
+! SPDX-License-Identifier: AGPL-3.0-or-later
+!
+! Meridian Shared Standards — golden device baseline (demo artifact)
+! Distributed read-only to every tenant through the shared Golden Artifacts
+! file repository. Values mirror the shared org's golden variables.
+!
+service timestamps log datetime msec
+no service pad
+!
+ntp server 10.10.0.1 prefer
+ip name-server 10.10.0.53
+logging host 10.10.0.90
+!
+banner motd ^ Managed by Meridian Networks — changes outside automation are reverted ^
+!
+line vty 0 4
+ transport input ssh
+ exec-timeout 15 0
+!
+end
